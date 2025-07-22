@@ -86,6 +86,41 @@ make publish
   - Usuário: `guest`
   - Senha: `guest`
 
+## 📝 Logging
+
+O Gohopper utiliza logging estruturado com suporte a rastreamento:
+
+### Características
+
+- **Formato JSON**: Logs estruturados para fácil parsing
+- **Trace ID**: Rastreamento de requisições através do sistema
+- **Contexto**: Informações de contexto em cada log
+- **Níveis**: Debug, Info, Warn, Error, Fatal
+- **Metadados**: Campos adicionais para análise
+
+### Exemplo de Log
+
+```json
+{
+  "timestamp": "2024-01-01T12:00:00Z",
+  "level": "info",
+  "message": "Message published successfully",
+  "trace_id": "550e8400-e29b-41d4-a716-446655440001",
+  "message_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message_type": "user.created",
+  "source": "gohopper-publisher",
+  "exchange_name": "events_exchange",
+  "routing_key": "event.user.created",
+  "body_size": 512
+}
+```
+
+### Configuração
+
+```bash
+LOG_LEVEL=info  # debug, info, warn, error, fatal
+```
+
 ## 🔧 Configuração
 
 ### Variáveis de Ambiente
@@ -138,15 +173,59 @@ O publisher do Gohopper oferece duas modalidades de operação:
 
 ### Estrutura do Evento
 
+O Gohopper utiliza um schema de mensagem estruturado com metadados ricos:
+
 ```json
 {
-  "id": "event-1",
+  "id": "550e8400-e29b-41d4-a716-446655440000",
   "type": "user.created",
-  "data": "User data for event 1",
+  "data": {
+    "user_id": "user-1",
+    "email": "user1@example.com",
+    "name": "User 1",
+    "timestamp": 1704067200,
+    "event_data": "User data for event 1"
+  },
+  "metadata": {
+    "priority": 1,
+    "retry_count": 0,
+    "headers": {
+      "test_mode": true,
+      "continuous_mode": false
+    },
+    "tags": ["test", "cli", "user"]
+  },
   "timestamp": "2024-01-01T12:00:00Z",
-  "source": "gohopper-publisher"
+  "source": "gohopper-publisher",
+  "version": "1.0.0",
+  "trace_id": "550e8400-e29b-41d4-a716-446655440001",
+  "correlation_id": ""
 }
 ```
+
+#### Campos da Mensagem
+
+| Campo            | Tipo   | Descrição                   |
+| ---------------- | ------ | --------------------------- |
+| `id`             | string | UUID único da mensagem      |
+| `type`           | string | Tipo do evento              |
+| `data`           | object | Dados do evento             |
+| `metadata`       | object | Metadados da mensagem       |
+| `timestamp`      | string | Timestamp ISO 8601          |
+| `source`         | string | Origem da mensagem          |
+| `version`        | string | Versão do schema            |
+| `trace_id`       | string | ID de rastreamento          |
+| `correlation_id` | string | ID de correlação (opcional) |
+
+#### Metadados
+
+| Campo         | Tipo     | Descrição                     |
+| ------------- | -------- | ----------------------------- |
+| `priority`    | int      | Prioridade da mensagem (1-10) |
+| `retry_count` | int      | Número de tentativas          |
+| `headers`     | object   | Headers customizados          |
+| `tags`        | array    | Tags para categorização       |
+| `ttl`         | duration | Time-to-live (opcional)       |
 
 ## 🔄 Fluxo de Processamento
 

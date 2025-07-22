@@ -1,18 +1,15 @@
 <mxfile host="65bd71144e">
     <diagram name="Gohopper Architecture" id="architecture">
-        <mxGraphModel dx="815" dy="1435" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+        <mxGraphModel dx="1984" dy="1435" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
-                <mxCell id="2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;strokeWidth=3;" vertex="1" parent="1">
-                    <mxGeometry x="790" y="90" width="220" height="170" as="geometry"/>
+                <mxCell id="publisher" value="Publisher&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(cmd/publisher)&lt;/font&gt;&lt;/span&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 10px;&quot;&gt;Continuous + CLI Mode&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;Structured Messages&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="100" width="120" height="80" as="geometry"/>
                 </mxCell>
-                                 <mxCell id="publisher" value="Publisher&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(cmd/publisher)&lt;/font&gt;&lt;/span&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 10px;&quot;&gt;Continuous + CLI Mode&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" parent="1" vertex="1">
-                     <mxGeometry x="30" y="100" width="120" height="70" as="geometry"/>
-                 </mxCell>
-                                 <mxCell id="rabbitmq" value="RabbitMQ&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-weight: normal;&quot;&gt;(5672/15672)&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 10px;&quot;&gt;Connection Retry&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" parent="1" vertex="1">
-                     <mxGeometry x="300" y="100" width="120" height="70" as="geometry"/>
-                 </mxCell>
+                <mxCell id="rabbitmq" value="RabbitMQ&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-weight: normal;&quot;&gt;(5672/15672)&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 10px;&quot;&gt;Connection Retry&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="100" width="120" height="70" as="geometry"/>
+                </mxCell>
                 <mxCell id="exchange" value="Exchange&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(events_exchange)&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="300" y="200" width="120" height="40" as="geometry"/>
                 </mxCell>
@@ -45,6 +42,9 @@
                 </mxCell>
                 <mxCell id="env" value=".env" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="590" y="-10" width="60" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="messageSchema" value="Message Schema&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 10px;&quot;&gt;EventMessage&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;JSON Encoder&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+                    <mxGeometry x="-60" y="240" width="120" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="conn1" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#82b366;" parent="1" source="publisher" target="rabbitmq" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">
@@ -118,6 +118,12 @@
                         <mxPoint x="110" y="160" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
+                <mxCell id="conn14" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=1;strokeColor=#9673a6;dashed=1;" edge="1" parent="1" source="messageSchema" target="publisher">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="90" y="200" as="sourcePoint"/>
+                        <mxPoint x="90" y="180" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
                 <mxCell id="conn13" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=1;strokeColor=#666666;dashed=1;" parent="1" source="env" target="consumer" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">
                         <mxPoint x="180" y="420" as="sourcePoint"/>
@@ -135,27 +141,6 @@
                 </mxCell>
                 <mxCell id="label4" value="Config" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#666666;" parent="1" vertex="1">
                     <mxGeometry x="90" y="380" width="40" height="20" as="geometry"/>
-                </mxCell>
-                <mxCell id="legend" value="Legend:" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1;" parent="1" vertex="1">
-                    <mxGeometry x="800" y="100" width="80" height="20" as="geometry"/>
-                </mxCell>
-                <mxCell id="legend1" value="• Publisher/Consumer: Main Applications" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="800" y="130" width="200" height="20" as="geometry"/>
-                </mxCell>
-                <mxCell id="legend2" value="• RabbitMQ: Messaging System" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="800" y="150" width="200" height="20" as="geometry"/>
-                </mxCell>
-                <mxCell id="legend3" value="• Exchange: Message Routing" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="800" y="170" width="200" height="20" as="geometry"/>
-                </mxCell>
-                <mxCell id="legend4" value="• Queues: Message Storage" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="800" y="190" width="200" height="20" as="geometry"/>
-                </mxCell>
-                <mxCell id="legend5" value="• Worker Pool: Concurrent processing" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="800" y="210" width="200" height="20" as="geometry"/>
-                </mxCell>
-                <mxCell id="legend6" value="• DLQ: Dead Letter Queue (failures)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="800" y="230" width="200" height="20" as="geometry"/>
                 </mxCell>
             </root>
         </mxGraphModel>

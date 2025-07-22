@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -10,19 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"gohopper/internal/logger"
 	"gohopper/internal/queue"
 
 	"github.com/joho/godotenv"
 )
-
-// Event represents an event to be published
-type Event struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type"`
-	Data      string    `json:"data"`
-	Timestamp time.Time `json:"timestamp"`
-	Source    string    `json:"source"`
-}
 
 func main() {
 	var cliMode bool
@@ -33,35 +25,46 @@ func main() {
 		log.Printf("Warning: .env file not found")
 	}
 
-	log.Println("Gohopper Publisher starting...")
+	// Create logger
+	loggerInstance := logger.NewLogger()
+	ctx := logger.CreateTraceContext()
+
+	loggerInstance.Info(ctx, "Gohopper Publisher starting", logger.Fields{
+		"mode":     "publisher",
+		"cli_mode": cliMode,
+	})
 
 	// Create queue manager
 	queueManager := queue.NewManager()
 
 	// Connect to RabbitMQ
 	if err := queueManager.Connect(); err != nil {
-		log.Fatalf("Failed to connect to RabbitMQ: %v", err)
+		loggerInstance.Fatal(ctx, "Failed to connect to RabbitMQ", logger.Fields{
+			"error": err.Error(),
+		})
 	}
 	defer queueManager.Close()
 
 	// Configure queues and exchanges
 	if err := queueManager.SetupQueues(); err != nil {
-		log.Fatalf("Failed to setup queues: %v", err)
+		loggerInstance.Fatal(ctx, "Failed to setup queues", logger.Fields{
+			"error": err.Error(),
+		})
 	}
 
-	log.Println("Publisher configured successfully!")
+	loggerInstance.Info(ctx, "Publisher configured successfully", nil)
 
 	if cliMode {
-		publishTestEvents(queueManager)
+		publishTestEvents(ctx, queueManager, loggerInstance)
 		return
 	}
 
-	runContinuousPublisher(queueManager)
+	runContinuousPublisher(ctx, queueManager, loggerInstance)
 }
 
 // publishTestEvents publishes some test events and exits
-func publishTestEvents(queueManager *queue.Manager) {
-	log.Println("Publishing test events in CLI mode...")
+func publishTestEvents(ctx context.Context, queueManager *queue.Manager, loggerInstance *logger.Logger) {
+	loggerInstance.Info(ctx, "Publishing test events in CLI mode", nil)
 
 	eventTypes := []string{
 		"user.created",
@@ -72,52 +75,63 @@ func publishTestEvents(queueManager *queue.Manager) {
 	}
 
 	for i, eventType := range eventTypes {
-		event := Event{
-			ID:        fmt.Sprintf("test-event-%d", i+1),
-			Type:      eventType,
-			Data:      fmt.Sprintf("Test data for %s", eventType),
-			Timestamp: time.Now(),
-			Source:    "gohopper-cli",
+		// Create event data
+		data := map[string]interface{}{
+			"user_id":    fmt.Sprintf("user-%d", i+1),
+			"email":      fmt.Sprintf("user%d@example.com", i+1),
+			"timestamp":  time.Now().Unix(),
+			"event_data": fmt.Sprintf("Test data for %s", eventType),
 		}
 
-		eventJSON, err := json.Marshal(event)
-		if err != nil {
-			log.Printf("Failed to marshal event: %v", err)
-			continue
-		}
+		// Create event message
+		message := queue.NewEventMessage(eventType, data, "gohopper-cli")
+
+		// Add some metadata
+		message.AddHeader("test_mode", true)
+		message.AddTag("test")
+		message.AddTag("cli")
+		message.SetPriority(i + 1)
 
 		// Publish event
 		routingKey := fmt.Sprintf("event.%s", eventType)
-		if err := queueManager.PublishMessage(routingKey, eventJSON); err != nil {
-			log.Printf("Failed to publish event: %v", err)
+		if err := queueManager.PublishEventMessage(ctx, message, routingKey); err != nil {
+			loggerInstance.Error(ctx, "Failed to publish test event", err, logger.Fields{
+				"event_type":  eventType,
+				"routing_key": routingKey,
+			})
 			continue
 		}
 
-		log.Printf("Published test event: %s (routing key: %s)", event.ID, routingKey)
+		loggerInstance.Info(ctx, "Test event published", logger.Fields{
+			"message_id":  message.ID,
+			"event_type":  eventType,
+			"routing_key": routingKey,
+			"trace_id":    message.TraceID,
+		})
 
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	log.Println("Test events published successfully!")
+	loggerInstance.Info(ctx, "Test events published successfully", nil)
 }
 
 // runContinuousPublisher runs the publisher in continuous mode
-func runContinuousPublisher(queueManager *queue.Manager) {
+func runContinuousPublisher(ctx context.Context, queueManager *queue.Manager, loggerInstance *logger.Logger) {
 	// Configure graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	stopChan := make(chan bool)
 
-	go publishEvents(queueManager, stopChan)
+	go publishEvents(ctx, queueManager, loggerInstance, stopChan)
 
 	<-sigChan
-	log.Println("Shutting down publisher...")
+	loggerInstance.Info(ctx, "Shutting down publisher", nil)
 	stopChan <- true
 }
 
 // publishEvents publishes events periodically
-func publishEvents(queueManager *queue.Manager, stopChan chan bool) {
+func publishEvents(ctx context.Context, queueManager *queue.Manager, loggerInstance *logger.Logger, stopChan chan bool) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
@@ -126,32 +140,44 @@ func publishEvents(queueManager *queue.Manager, stopChan chan bool) {
 	for {
 		select {
 		case <-ticker.C:
-			event := Event{
-				ID:        fmt.Sprintf("event-%d", eventCounter),
-				Type:      "user.created",
-				Data:      fmt.Sprintf("User data for event %d", eventCounter),
-				Timestamp: time.Now(),
-				Source:    "gohopper-publisher",
+			// Create event data
+			data := map[string]interface{}{
+				"user_id":    fmt.Sprintf("user-%d", eventCounter),
+				"email":      fmt.Sprintf("user%d@example.com", eventCounter),
+				"name":       fmt.Sprintf("User %d", eventCounter),
+				"timestamp":  time.Now().Unix(),
+				"event_data": fmt.Sprintf("User data for event %d", eventCounter),
 			}
 
-			eventJSON, err := json.Marshal(event)
-			if err != nil {
-				log.Printf("Failed to marshal event: %v", err)
-				continue
-			}
+			// Create event message
+			message := queue.NewEventMessage("user.created", data, "gohopper-publisher")
 
-			// publish event
+			// Add metadata
+			message.AddHeader("continuous_mode", true)
+			message.AddTag("continuous")
+			message.AddTag("user")
+			message.SetPriority(1)
+
+			// Publish event
 			routingKey := "event.user.created"
-			if err := queueManager.PublishMessage(routingKey, eventJSON); err != nil {
-				log.Printf("Failed to publish event: %v", err)
+			if err := queueManager.PublishEventMessage(ctx, message, routingKey); err != nil {
+				loggerInstance.Error(ctx, "Failed to publish event", err, logger.Fields{
+					"event_counter": eventCounter,
+					"routing_key":   routingKey,
+				})
 				continue
 			}
 
-			log.Printf("Published event: %s (routing key: %s)", event.ID, routingKey)
+			loggerInstance.Info(ctx, "Event published", logger.Fields{
+				"message_id":    message.ID,
+				"event_counter": eventCounter,
+				"routing_key":   routingKey,
+				"trace_id":      message.TraceID,
+			})
 			eventCounter++
 
 		case <-stopChan:
-			log.Println("Stopping event publication...")
+			loggerInstance.Info(ctx, "Stopping event publication", nil)
 			return
 		}
 	}

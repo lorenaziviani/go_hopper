@@ -1,10 +1,12 @@
 package queue
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"os"
 	"time"
+
+	"gohopper/internal/logger"
 
 	"github.com/streadway/amqp"
 )
@@ -17,6 +19,8 @@ type Manager struct {
 	vhost    string
 	conn     *amqp.Connection
 	channel  *amqp.Channel
+	logger   *logger.Logger
+	encoder  MessageEncoder
 }
 
 // NewManager creates a new instance of the queue manager
@@ -27,12 +31,19 @@ func NewManager() *Manager {
 		user:     getEnv("RABBITMQ_USER", "guest"),
 		password: getEnv("RABBITMQ_PASSWORD", "guest"),
 		vhost:    getEnv("RABBITMQ_VHOST", "/"),
+		logger:   logger.NewLogger(),
+		encoder:  &JSONEncoder{},
 	}
 }
 
 // Connect establishes a connection to the RabbitMQ
 func (m *Manager) Connect() error {
-	log.Println("Connecting to RabbitMQ...")
+	ctx := logger.CreateTraceContext()
+	m.logger.Info(ctx, "Connecting to RabbitMQ", logger.Fields{
+		"host": m.host,
+		"port": m.port,
+		"user": m.user,
+	})
 
 	// Build connection URL
 	url := fmt.Sprintf("amqp://%s:%s@%s:%s%s",
@@ -45,26 +56,36 @@ func (m *Manager) Connect() error {
 		if err == nil {
 			break
 		}
-		log.Printf("Connection attempt %d failed: %v", i+1, err)
+		m.logger.Warn(ctx, fmt.Sprintf("Connection attempt %d failed", i+1), logger.Fields{
+			"attempt": i + 1,
+			"error":   err.Error(),
+		})
 		time.Sleep(time.Duration(i+1) * time.Second)
 	}
 
 	if err != nil {
+		m.logger.Error(ctx, "Failed to connect to RabbitMQ", err, logger.Fields{
+			"max_attempts": 5,
+		})
 		return fmt.Errorf("failed to connect to RabbitMQ: %w", err)
 	}
 
 	m.channel, err = m.conn.Channel()
 	if err != nil {
+		m.logger.Error(ctx, "Failed to open channel", err, nil)
 		return fmt.Errorf("failed to open channel: %w", err)
 	}
 
-	log.Println("Successfully connected to RabbitMQ")
+	m.logger.Info(ctx, "Successfully connected to RabbitMQ", logger.Fields{
+		"connection_id": m.conn.LocalAddr().String(),
+	})
 	return nil
 }
 
 // SetupQueues configures the queues and exchanges
 func (m *Manager) SetupQueues() error {
-	log.Println("Configuring queues and exchanges...")
+	ctx := logger.CreateTraceContext()
+	m.logger.Info(ctx, "Configuring queues and exchanges", nil)
 
 	// Configure QoS
 	err := m.channel.Qos(
@@ -73,6 +94,7 @@ func (m *Manager) SetupQueues() error {
 		false,
 	)
 	if err != nil {
+		m.logger.Error(ctx, "Failed to set QoS", err, nil)
 		return fmt.Errorf("failed to set QoS: %w", err)
 	}
 
@@ -88,6 +110,9 @@ func (m *Manager) SetupQueues() error {
 		nil,          // arguments
 	)
 	if err != nil {
+		m.logger.Error(ctx, "Failed to declare exchange", err, logger.Fields{
+			"exchange_name": exchangeName,
+		})
 		return fmt.Errorf("failed to declare exchange: %w", err)
 	}
 
@@ -102,6 +127,9 @@ func (m *Manager) SetupQueues() error {
 		nil,       // arguments
 	)
 	if err != nil {
+		m.logger.Error(ctx, "Failed to declare queue", err, logger.Fields{
+			"queue_name": queueName,
+		})
 		return fmt.Errorf("failed to declare queue: %w", err)
 	}
 
@@ -117,6 +145,9 @@ func (m *Manager) SetupQueues() error {
 		nil,             // arguments
 	)
 	if err != nil {
+		m.logger.Error(ctx, "Failed to declare DLQ exchange", err, logger.Fields{
+			"dlq_exchange_name": dlqExchangeName,
+		})
 		return fmt.Errorf("failed to declare DLQ exchange: %w", err)
 	}
 
@@ -131,6 +162,9 @@ func (m *Manager) SetupQueues() error {
 		nil,     // arguments
 	)
 	if err != nil {
+		m.logger.Error(ctx, "Failed to declare DLQ", err, logger.Fields{
+			"dlq_name": dlqName,
+		})
 		return fmt.Errorf("failed to declare DLQ: %w", err)
 	}
 
@@ -144,6 +178,11 @@ func (m *Manager) SetupQueues() error {
 		nil,          // arguments
 	)
 	if err != nil {
+		m.logger.Error(ctx, "Failed to bind queue", err, logger.Fields{
+			"queue_name":    queueName,
+			"routing_key":   routingKey,
+			"exchange_name": exchangeName,
+		})
 		return fmt.Errorf("failed to bind queue: %w", err)
 	}
 
@@ -156,10 +195,20 @@ func (m *Manager) SetupQueues() error {
 		nil,             // arguments
 	)
 	if err != nil {
+		m.logger.Error(ctx, "Failed to bind DLQ", err, logger.Fields{
+			"dlq_name":          dlqName,
+			"dlq_exchange_name": dlqExchangeName,
+		})
 		return fmt.Errorf("failed to bind DLQ: %w", err)
 	}
 
-	log.Println("Queues and exchanges configured successfully")
+	m.logger.Info(ctx, "Queues and exchanges configured successfully", logger.Fields{
+		"main_queue":    queueName,
+		"main_exchange": exchangeName,
+		"dlq_name":      dlqName,
+		"dlq_exchange":  dlqExchangeName,
+		"routing_key":   routingKey,
+	})
 	return nil
 }
 
@@ -169,6 +218,7 @@ func (m *Manager) PublishMessage(routingKey string, body []byte) error {
 		return fmt.Errorf("channel not initialized")
 	}
 
+	ctx := logger.CreateTraceContext()
 	exchangeName := getEnv("EXCHANGE_NAME", "events_exchange")
 
 	err := m.channel.Publish(
@@ -185,27 +235,73 @@ func (m *Manager) PublishMessage(routingKey string, body []byte) error {
 	)
 
 	if err != nil {
+		m.logger.Error(ctx, "Failed to publish message", err, logger.Fields{
+			"exchange_name": exchangeName,
+			"routing_key":   routingKey,
+			"body_size":     len(body),
+		})
 		return fmt.Errorf("failed to publish message: %w", err)
 	}
+
+	m.logger.Info(ctx, "Message published successfully", logger.Fields{
+		"exchange_name": exchangeName,
+		"routing_key":   routingKey,
+		"body_size":     len(body),
+	})
+
+	return nil
+}
+
+// PublishEventMessage publishes an EventMessage using the encoder
+func (m *Manager) PublishEventMessage(ctx context.Context, message *EventMessage, routingKey string) error {
+	if message == nil {
+		return fmt.Errorf("message cannot be nil")
+	}
+
+	body, err := m.encoder.Encode(message)
+	if err != nil {
+		m.logger.Error(ctx, "Failed to encode message", err, logger.Fields{
+			"message_id":   message.ID,
+			"message_type": message.Type,
+		})
+		return fmt.Errorf("failed to encode message: %w", err)
+	}
+
+	err = m.PublishMessage(routingKey, body)
+	if err != nil {
+		m.logger.Error(ctx, "Failed to publish event message", err, logger.Fields{
+			"message_id":   message.ID,
+			"message_type": message.Type,
+			"routing_key":  routingKey,
+		})
+		return err
+	}
+
+	m.logger.LogMessageReceived(ctx, message.ID, message.Type, message.Source, logger.Fields{
+		"routing_key": routingKey,
+		"trace_id":    message.TraceID,
+	})
 
 	return nil
 }
 
 // Close closes the connection to RabbitMQ
 func (m *Manager) Close() error {
+	ctx := logger.CreateTraceContext()
+
 	if m.channel != nil {
 		if err := m.channel.Close(); err != nil {
-			log.Printf("Error closing channel: %v", err)
+			m.logger.Error(ctx, "Error closing channel", err, nil)
 		}
 	}
 
 	if m.conn != nil {
 		if err := m.conn.Close(); err != nil {
-			log.Printf("Error closing connection: %v", err)
+			m.logger.Error(ctx, "Error closing connection", err, nil)
 		}
 	}
 
-	log.Println("RabbitMQ connection closed")
+	m.logger.Info(ctx, "RabbitMQ connection closed", nil)
 	return nil
 }
 
