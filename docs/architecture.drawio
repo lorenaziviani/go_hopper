@@ -7,12 +7,12 @@
                 <mxCell id="2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;strokeWidth=3;" vertex="1" parent="1">
                     <mxGeometry x="790" y="90" width="220" height="170" as="geometry"/>
                 </mxCell>
-                <mxCell id="publisher" value="Publisher&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(cmd/publisher)&lt;/font&gt;&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" parent="1" vertex="1">
-                    <mxGeometry x="30" y="100" width="120" height="60" as="geometry"/>
-                </mxCell>
-                <mxCell id="rabbitmq" value="RabbitMQ&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-weight: normal;&quot;&gt;(5672/15672)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" parent="1" vertex="1">
-                    <mxGeometry x="300" y="100" width="120" height="60" as="geometry"/>
-                </mxCell>
+                                 <mxCell id="publisher" value="Publisher&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(cmd/publisher)&lt;/font&gt;&lt;/span&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 10px;&quot;&gt;Continuous + CLI Mode&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" parent="1" vertex="1">
+                     <mxGeometry x="30" y="100" width="120" height="70" as="geometry"/>
+                 </mxCell>
+                                 <mxCell id="rabbitmq" value="RabbitMQ&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-weight: normal;&quot;&gt;(5672/15672)&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 10px;&quot;&gt;Connection Retry&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" parent="1" vertex="1">
+                     <mxGeometry x="300" y="100" width="120" height="70" as="geometry"/>
+                 </mxCell>
                 <mxCell id="exchange" value="Exchange&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(events_exchange)&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="300" y="200" width="120" height="40" as="geometry"/>
                 </mxCell>

@@ -74,6 +74,12 @@ go run cmd/consumer/main.go
 go run cmd/publisher/main.go
 ```
 
+### 7. Simule envio de eventos via CLI
+
+```bash
+make publish
+```
+
 ## 📊 Monitoramento
 
 - **RabbitMQ Management UI**: http://localhost:15672
@@ -84,15 +90,18 @@ go run cmd/publisher/main.go
 
 ### Variáveis de Ambiente
 
-| Variável            | Descrição                  | Padrão      |
-| ------------------- | -------------------------- | ----------- |
-| `RABBITMQ_HOST`     | Host do RabbitMQ           | `localhost` |
-| `RABBITMQ_PORT`     | Porta do RabbitMQ          | `5672`      |
-| `RABBITMQ_USER`     | Usuário do RabbitMQ        | `guest`     |
-| `RABBITMQ_PASSWORD` | Senha do RabbitMQ          | `guest`     |
-| `WORKER_POOL_SIZE`  | Tamanho do pool de workers | `5`         |
-| `MAX_RETRIES`       | Máximo de tentativas       | `3`         |
-| `RETRY_DELAY`       | Delay entre tentativas     | `1000ms`    |
+| Variável             | Descrição                     | Padrão               |
+| -------------------- | ----------------------------- | -------------------- |
+| `RABBITMQ_HOST`      | Host do RabbitMQ              | `localhost`          |
+| `RABBITMQ_PORT`      | Porta do RabbitMQ             | `5672`               |
+| `RABBITMQ_USER`      | Usuário do RabbitMQ           | `guest`              |
+| `RABBITMQ_PASSWORD`  | Senha do RabbitMQ             | `guest`              |
+| `WORKER_POOL_SIZE`   | Tamanho do pool de workers    | `5`                  |
+| `MAX_RETRIES`        | Máximo de tentativas          | `3`                  |
+| `RETRY_DELAY`        | Delay entre tentativas        | `1000ms`             |
+| `PUBLISH_INTERVAL`   | Intervalo de publicação       | `2s`                 |
+| `PUBLISH_BATCH_SIZE` | Tamanho do lote de publicação | `10`                 |
+| `EVENT_SOURCE`       | Fonte dos eventos             | `gohopper-publisher` |
 
 ## 🏗️ Arquitetura
 
@@ -102,6 +111,42 @@ O Gohopper utiliza uma arquitetura baseada em eventos com:
 - **Consumer**: Consome eventos com pool de workers
 - **Processor**: Processa mensagens com retry e DLQ
 - **Queue Manager**: Gerencia conexões e configurações do RabbitMQ
+
+## 📤 Publisher
+
+O publisher do Gohopper oferece duas modalidades de operação:
+
+### Modo Contínuo
+
+- Publica eventos automaticamente a cada intervalo configurado
+- Ideal para simulação de carga e testes contínuos
+- Suporte a graceful shutdown
+
+### Modo CLI
+
+- Publica um conjunto de eventos de teste e encerra
+- Útil para testes pontuais e validação
+- Executado via `make publish`
+
+### Tipos de Eventos Suportados
+
+- `user.created` - Criação de usuário
+- `user.updated` - Atualização de usuário
+- `order.created` - Criação de pedido
+- `payment.processed` - Processamento de pagamento
+- `notification.sent` - Envio de notificação
+
+### Estrutura do Evento
+
+```json
+{
+  "id": "event-1",
+  "type": "user.created",
+  "data": "User data for event 1",
+  "timestamp": "2024-01-01T12:00:00Z",
+  "source": "gohopper-publisher"
+}
+```
 
 ## 🔄 Fluxo de Processamento
 

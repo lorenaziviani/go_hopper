@@ -23,6 +23,10 @@ run-consumer: ## Run the consumer
 	@echo "Running consumer..."
 	go run ./cmd/consumer
 
+publish: ## Simulate event publishing (CLI)
+	@echo "Publishing test events..."
+	@go run ./cmd/publisher -cli
+
 test: ## Run the tests
 	@echo "Running tests..."
 	go test -v ./...
@@ -86,4 +90,5 @@ dev: setup docker-up ## Configure and start the development environment
 	@echo "Development environment ready!"
 	@echo "RabbitMQ Management: http://localhost:15672"
 	@echo "To run consumer: make run-consumer (in one terminal)"
-	@echo "To run publisher: make run-publisher (in another terminal)" 
+	@echo "To run publisher: make run-publisher (in another terminal)"
+	@echo "To publish test events: make publish" 
