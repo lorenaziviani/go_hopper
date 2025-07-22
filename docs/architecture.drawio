@@ -19,8 +19,8 @@
                 <mxCell id="dlq" value="Dead Letter Queue&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(events_dlq)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="240" y="290" width="100" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="consumer" value="Consumer&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(cmd/consumer)&lt;/font&gt;&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" parent="1" vertex="1">
-                    <mxGeometry x="560" y="90" width="120" height="60" as="geometry"/>
+                <mxCell id="consumer" value="Consumer&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(cmd/consumer)&lt;/font&gt;&lt;/span&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 10px;&quot;&gt;Worker Pool&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;Concurrent Processing&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="560" y="90" width="120" height="80" as="geometry"/>
                 </mxCell>
                 <mxCell id="workerPool" value="Worker Pool&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(internal/processor)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="530" y="260" width="180" height="50" as="geometry"/>

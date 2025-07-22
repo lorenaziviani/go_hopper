@@ -171,6 +171,44 @@ O publisher do Gohopper oferece duas modalidades de operação:
 - `payment.processed` - Processamento de pagamento
 - `notification.sent` - Envio de notificação
 
+## 📥 Consumer
+
+O consumer do Gohopper implementa processamento concorrente com worker pool:
+
+### Worker Pool
+
+- **Processamento Concorrente**: Múltiplas goroutines processando mensagens simultaneamente
+- **Configurável**: Número de workers ajustável via parâmetro `-workers`
+- **Graceful Shutdown**: Parada segura com finalização de jobs em andamento
+- **Estatísticas**: Monitoramento de performance e status do pool
+
+### Recursos Avançados
+
+- **Retry com Backoff Exponencial**: Tentativas automáticas com delay crescente
+- **Dead Letter Queue (DLQ)**: Mensagens com falha são enviadas para DLQ
+- **Acknowledgment**: Confirmação manual de processamento bem-sucedido
+- **Trace ID**: Rastreamento completo de mensagens através do sistema
+
+### Configuração
+
+```bash
+# Consumer padrão (5 workers)
+make run-consumer
+
+# Consumer com 10 workers
+make run-consumer-workers
+
+# Consumer com tag customizada
+make run-consumer-tag
+```
+
+### Parâmetros de Linha de Comando
+
+| Parâmetro  | Descrição         | Padrão              |
+| ---------- | ----------------- | ------------------- |
+| `-workers` | Número de workers | `5`                 |
+| `-tag`     | Tag do consumer   | `gohopper-consumer` |
+
 ### Estrutura do Evento
 
 O Gohopper utiliza um schema de mensagem estruturado com metadados ricos:

@@ -23,6 +23,14 @@ run-consumer: ## Run the consumer
 	@echo "Running consumer..."
 	go run ./cmd/consumer
 
+run-consumer-workers: ## Run consumer with custom worker count
+	@echo "Running consumer with custom worker count..."
+	@go run ./cmd/consumer -workers=10
+
+run-consumer-tag: ## Run consumer with custom tag
+	@echo "Running consumer with custom tag..."
+	@go run ./cmd/consumer -tag=gohopper-consumer-$(shell date +%s)
+
 publish: ## Simulate event publishing (CLI)
 	@echo "Publishing test events..."
 	@go run ./cmd/publisher -cli

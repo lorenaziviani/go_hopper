@@ -1,113 +1,300 @@
 package processor
 
 import (
-	"log"
+	"context"
+	"fmt"
 	"sync"
 	"time"
+
+	"gohopper/internal/logger"
+	"gohopper/internal/queue"
+
+	"github.com/streadway/amqp"
 )
 
+// Job represents a message processing job
+type Job struct {
+	Message    *queue.EventMessage
+	Delivery   amqp.Delivery
+	ReceivedAt time.Time
+	RetryCount int
+	MaxRetries int
+	RetryDelay time.Duration
+}
+
+// Worker represents a worker in the pool
 type Worker struct {
-	id       int
-	jobChan  chan Job
+	ID       int
+	jobChan  chan *Job
 	quitChan chan bool
 	wg       *sync.WaitGroup
+	logger   *logger.Logger
+	handler  MessageHandler
 }
 
-type Job struct {
-	ID      string
-	Payload []byte
-	Retries int
+// MessageHandler defines the interface for processing messages
+type MessageHandler interface {
+	ProcessMessage(ctx context.Context, message *queue.EventMessage) error
 }
 
-type Pool struct {
+// WorkerPool manages a pool of workers
+type WorkerPool struct {
 	workers    []*Worker
-	jobChan    chan Job
+	jobChan    chan *Job
 	quitChan   chan bool
 	wg         sync.WaitGroup
-	maxRetries int
-	retryDelay time.Duration
+	logger     *logger.Logger
+	handler    MessageHandler
+	maxWorkers int
+	active     bool
+	mu         sync.RWMutex
 }
 
-// NewPool creates a new worker pool
-func NewPool() *Pool {
-	poolSize := getEnvAsInt("WORKER_POOL_SIZE", 5)
-	maxRetries := getEnvAsInt("MAX_RETRIES", 3)
-	retryDelay := getEnvAsDuration("RETRY_DELAY", 1000*time.Millisecond)
-
-	return &Pool{
-		workers:    make([]*Worker, poolSize),
-		jobChan:    make(chan Job, poolSize*2),
+// NewWorkerPool creates a new worker pool
+func NewWorkerPool(maxWorkers int, handler MessageHandler) *WorkerPool {
+	return &WorkerPool{
+		workers:    make([]*Worker, 0, maxWorkers),
+		jobChan:    make(chan *Job, maxWorkers*2),
 		quitChan:   make(chan bool),
-		maxRetries: maxRetries,
-		retryDelay: retryDelay,
+		logger:     logger.NewLogger(),
+		handler:    handler,
+		maxWorkers: maxWorkers,
+		active:     false,
 	}
 }
 
 // Start starts the worker pool
-func (p *Pool) Start() {
-	log.Printf("Iniciando pool com %d workers...", len(p.workers))
+func (wp *WorkerPool) Start(ctx context.Context) error {
+	wp.mu.Lock()
+	defer wp.mu.Unlock()
 
-	for i := 0; i < len(p.workers); i++ {
-		worker := &Worker{
-			id:       i + 1,
-			jobChan:  p.jobChan,
-			quitChan: p.quitChan,
-			wg:       &p.wg,
-		}
-		p.workers[i] = worker
-		p.wg.Add(1)
-		go worker.start()
+	if wp.active {
+		return fmt.Errorf("worker pool is already active")
+	}
+
+	wp.logger.Info(ctx, "Starting worker pool", logger.Fields{
+		"max_workers": wp.maxWorkers,
+	})
+
+	for i := 0; i < wp.maxWorkers; i++ {
+		worker := wp.newWorker(i)
+		wp.workers = append(wp.workers, worker)
+		worker.Start(ctx)
+	}
+
+	wp.active = true
+	wp.logger.Info(ctx, "Worker pool started successfully", logger.Fields{
+		"worker_count": len(wp.workers),
+	})
+
+	return nil
+}
+
+// Stop stops the worker pool gracefully
+func (wp *WorkerPool) Stop(ctx context.Context) error {
+	wp.mu.Lock()
+	defer wp.mu.Unlock()
+
+	if !wp.active {
+		return fmt.Errorf("worker pool is not active")
+	}
+
+	wp.logger.Info(ctx, "Stopping worker pool", nil)
+
+	close(wp.quitChan)
+
+	for _, worker := range wp.workers {
+		worker.Stop(ctx)
+	}
+
+	wp.wg.Wait()
+
+	close(wp.jobChan)
+
+	wp.active = false
+	wp.logger.Info(ctx, "Worker pool stopped successfully", nil)
+
+	return nil
+}
+
+// SubmitJob submits a job to the worker pool
+func (wp *WorkerPool) SubmitJob(ctx context.Context, job *Job) error {
+	wp.mu.RLock()
+	defer wp.mu.RUnlock()
+
+	if !wp.active {
+		return fmt.Errorf("worker pool is not active")
+	}
+
+	select {
+	case wp.jobChan <- job:
+		wp.logger.Debug(ctx, "Job submitted to worker pool", logger.Fields{
+			"message_id":   job.Message.ID,
+			"message_type": job.Message.Type,
+			"worker_count": len(wp.workers),
+		})
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("context cancelled while submitting job")
+	default:
+		return fmt.Errorf("worker pool is full")
 	}
 }
 
-// Stop stops the worker pool
-func (p *Pool) Stop() {
-	log.Println("Parando pool de workers...")
-	close(p.quitChan)
-	p.wg.Wait()
+// newWorker creates a new worker
+func (wp *WorkerPool) newWorker(id int) *Worker {
+	return &Worker{
+		ID:       id,
+		jobChan:  wp.jobChan,
+		quitChan: wp.quitChan,
+		wg:       &wp.wg,
+		logger:   wp.logger,
+		handler:  wp.handler,
+	}
 }
 
-// SubmitJob submits a job for processing
-func (p *Pool) SubmitJob(job Job) {
-	p.jobChan <- job
+// Start starts the worker
+func (w *Worker) Start(ctx context.Context) {
+	w.wg.Add(1)
+	go w.run(ctx)
 }
 
-// start starts the worker
-func (w *Worker) start() {
+// Stop stops the worker
+func (w *Worker) Stop(ctx context.Context) {
+	w.logger.Info(ctx, "Worker stopping", logger.Fields{
+		"worker_id": w.ID,
+	})
+}
+
+// run is the main worker loop
+func (w *Worker) run(ctx context.Context) {
 	defer w.wg.Done()
 
-	log.Printf("Worker %d iniciado", w.id)
+	workerCtx := logger.WithTraceID(ctx)
+	w.logger.Info(workerCtx, "Worker started", logger.Fields{
+		"worker_id": w.ID,
+	})
 
 	for {
 		select {
 		case job := <-w.jobChan:
-			w.processJob(job)
+			w.processJob(workerCtx, job)
 		case <-w.quitChan:
-			log.Printf("Worker %d parando", w.id)
+			w.logger.Info(workerCtx, "Worker stopped", logger.Fields{
+				"worker_id": w.ID,
+			})
+			return
+		case <-ctx.Done():
+			w.logger.Info(workerCtx, "Worker context cancelled", logger.Fields{
+				"worker_id": w.ID,
+			})
 			return
 		}
 	}
 }
 
-// processJob processes a job with retry and DLQ
-func (w *Worker) processJob(job Job) {
-	log.Printf("Worker %d processando job %s", w.id, job.ID)
+// processJob processes a single job
+func (w *Worker) processJob(ctx context.Context, job *Job) {
+	startTime := time.Now()
 
-	// TODO: Implement retry and DLQ
+	messageCtx := context.WithValue(ctx, "trace_id", job.Message.TraceID)
 
-	// Simulação de processamento
-	time.Sleep(100 * time.Millisecond)
-	log.Printf("Job %s processado com sucesso", job.ID)
+	w.logger.LogMessageReceived(messageCtx, job.Message.ID, job.Message.Type, job.Message.Source, logger.Fields{
+		"worker_id":     w.ID,
+		"retry_count":   job.RetryCount,
+		"queue_time_ms": time.Since(job.ReceivedAt).Milliseconds(),
+	})
+
+	err := w.handler.ProcessMessage(messageCtx, job.Message)
+
+	processingTime := time.Since(startTime)
+
+	if err != nil {
+		w.logger.LogMessageFailed(messageCtx, job.Message.ID, job.Message.Type, job.Message.Source, err, job.RetryCount, logger.Fields{
+			"worker_id":          w.ID,
+			"processing_time_ms": processingTime.Milliseconds(),
+		})
+
+		if job.RetryCount < job.MaxRetries {
+			w.handleRetry(messageCtx, job)
+		} else {
+			w.handleDLQ(messageCtx, job, err)
+		}
+	} else {
+		w.logger.LogMessageProcessed(messageCtx, job.Message.ID, job.Message.Type, job.Message.Source, processingTime, logger.Fields{
+			"worker_id": w.ID,
+		})
+
+		if err := job.Delivery.Ack(false); err != nil {
+			w.logger.Error(messageCtx, "Failed to acknowledge message", err, logger.Fields{
+				"worker_id":  w.ID,
+				"message_id": job.Message.ID,
+			})
+		}
+	}
 }
 
-// getEnvAsInt gets the environment variable as an int
-func getEnvAsInt(key string, defaultValue int) int {
-	// TODO: Implement conversion from string to int
-	return defaultValue
+// handleRetry handles message retry logic
+func (w *Worker) handleRetry(ctx context.Context, job *Job) {
+	delay := w.calculateBackoffDelay(job.RetryCount, job.RetryDelay)
+
+	w.logger.LogMessageRetry(ctx, job.Message.ID, job.Message.Type, job.Message.Source, job.RetryCount, delay, logger.Fields{
+		"worker_id": w.ID,
+	})
+
+	if err := job.Delivery.Reject(false); err != nil {
+		w.logger.Error(ctx, "Failed to reject message for retry", err, logger.Fields{
+			"worker_id":  w.ID,
+			"message_id": job.Message.ID,
+		})
+	}
 }
 
-// getEnvAsDuration gets the environment variable as a Duration
-func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
-	// TODO: Implement conversion from string to Duration
-	return defaultValue
+// handleDLQ handles sending message to Dead Letter Queue
+func (w *Worker) handleDLQ(ctx context.Context, job *Job, err error) {
+	w.logger.LogMessageDLQ(ctx, job.Message.ID, job.Message.Type, job.Message.Source, err.Error(), logger.Fields{
+		"worker_id":   w.ID,
+		"max_retries": job.MaxRetries,
+	})
+
+	if err := job.Delivery.Reject(false); err != nil {
+		w.logger.Error(ctx, "Failed to reject message for DLQ", err, logger.Fields{
+			"worker_id":  w.ID,
+			"message_id": job.Message.ID,
+		})
+	}
+}
+
+// calculateBackoffDelay calculates exponential backoff delay
+func (w *Worker) calculateBackoffDelay(retryCount int, baseDelay time.Duration) time.Duration {
+	multiplier := 1 << retryCount
+	delay := time.Duration(multiplier) * baseDelay
+
+	maxDelay := 30 * time.Second
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+
+	return delay
+}
+
+// GetStats returns worker pool statistics
+func (wp *WorkerPool) GetStats() map[string]interface{} {
+	wp.mu.RLock()
+	defer wp.mu.RUnlock()
+
+	return map[string]interface{}{
+		"active":       wp.active,
+		"worker_count": len(wp.workers),
+		"max_workers":  wp.maxWorkers,
+		"queue_size":   len(wp.jobChan),
+		"queue_cap":    cap(wp.jobChan),
+	}
+}
+
+// IsActive returns whether the worker pool is active
+func (wp *WorkerPool) IsActive() bool {
+	wp.mu.RLock()
+	defer wp.mu.RUnlock()
+	return wp.active
 }
