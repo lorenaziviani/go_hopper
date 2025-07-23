@@ -30,6 +30,8 @@ type Worker struct {
 	wg       *sync.WaitGroup
 	logger   *logger.Logger
 	handler  MessageHandler
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 // MessageHandler defines the interface for processing messages
@@ -48,10 +50,13 @@ type WorkerPool struct {
 	maxWorkers int
 	active     bool
 	mu         sync.RWMutex
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 // NewWorkerPool creates a new worker pool
 func NewWorkerPool(maxWorkers int, handler MessageHandler) *WorkerPool {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &WorkerPool{
 		workers:    make([]*Worker, 0, maxWorkers),
 		jobChan:    make(chan *Job, maxWorkers*2),
@@ -60,6 +65,8 @@ func NewWorkerPool(maxWorkers int, handler MessageHandler) *WorkerPool {
 		handler:    handler,
 		maxWorkers: maxWorkers,
 		active:     false,
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 }
 
@@ -101,13 +108,35 @@ func (wp *WorkerPool) Stop(ctx context.Context) error {
 
 	wp.logger.Info(ctx, "Stopping worker pool", nil)
 
+	wp.cancel()
+
 	close(wp.quitChan)
 
-	for _, worker := range wp.workers {
-		worker.Stop(ctx)
+	done := make(chan struct{})
+	go func() {
+		wp.wg.Wait()
+		close(done)
+	}()
+
+	// Use default timeout of 30 seconds if not provided in context
+	timeout := 30 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = time.Until(deadline)
+		if timeout < 0 {
+			timeout = 30 * time.Second
+		}
 	}
 
-	wp.wg.Wait()
+	select {
+	case <-done:
+		wp.logger.Info(ctx, "All workers stopped gracefully", nil)
+	case <-time.After(timeout):
+		wp.logger.Warn(ctx, "Worker pool stop timeout - forcing shutdown", logger.Fields{
+			"timeout": timeout,
+		})
+	case <-ctx.Done():
+		wp.logger.Warn(ctx, "Context cancelled during worker pool shutdown", nil)
+	}
 
 	close(wp.jobChan)
 
@@ -136,6 +165,8 @@ func (wp *WorkerPool) SubmitJob(ctx context.Context, job *Job) error {
 		return nil
 	case <-ctx.Done():
 		return fmt.Errorf("context cancelled while submitting job")
+	case <-wp.ctx.Done():
+		return fmt.Errorf("worker pool is shutting down")
 	default:
 		return fmt.Errorf("worker pool is full")
 	}
@@ -143,6 +174,7 @@ func (wp *WorkerPool) SubmitJob(ctx context.Context, job *Job) error {
 
 // newWorker creates a new worker
 func (wp *WorkerPool) newWorker(id int) *Worker {
+	workerCtx, cancel := context.WithCancel(wp.ctx)
 	return &Worker{
 		ID:       id,
 		jobChan:  wp.jobChan,
@@ -150,6 +182,8 @@ func (wp *WorkerPool) newWorker(id int) *Worker {
 		wg:       &wp.wg,
 		logger:   wp.logger,
 		handler:  wp.handler,
+		ctx:      workerCtx,
+		cancel:   cancel,
 	}
 }
 
@@ -164,11 +198,17 @@ func (w *Worker) Stop(ctx context.Context) {
 	w.logger.Info(ctx, "Worker stopping", logger.Fields{
 		"worker_id": w.ID,
 	})
+	w.cancel()
 }
 
 // run is the main worker loop
 func (w *Worker) run(ctx context.Context) {
-	defer w.wg.Done()
+	defer func() {
+		w.wg.Done()
+		w.logger.Info(ctx, "Worker goroutine finished", logger.Fields{
+			"worker_id": w.ID,
+		})
+	}()
 
 	workerCtx := logger.WithTraceID(ctx)
 	w.logger.Info(workerCtx, "Worker started", logger.Fields{
@@ -180,12 +220,17 @@ func (w *Worker) run(ctx context.Context) {
 		case job := <-w.jobChan:
 			w.processJob(workerCtx, job)
 		case <-w.quitChan:
-			w.logger.Info(workerCtx, "Worker stopped", logger.Fields{
+			w.logger.Info(workerCtx, "Worker received quit signal", logger.Fields{
+				"worker_id": w.ID,
+			})
+			return
+		case <-w.ctx.Done():
+			w.logger.Info(workerCtx, "Worker context cancelled", logger.Fields{
 				"worker_id": w.ID,
 			})
 			return
 		case <-ctx.Done():
-			w.logger.Info(workerCtx, "Worker context cancelled", logger.Fields{
+			w.logger.Info(workerCtx, "Worker parent context cancelled", logger.Fields{
 				"worker_id": w.ID,
 			})
 			return
@@ -289,6 +334,7 @@ func (wp *WorkerPool) GetStats() map[string]interface{} {
 		"max_workers":  wp.maxWorkers,
 		"queue_size":   len(wp.jobChan),
 		"queue_cap":    cap(wp.jobChan),
+		"context_done": wp.ctx.Err() != nil,
 	}
 }
 
@@ -297,4 +343,9 @@ func (wp *WorkerPool) IsActive() bool {
 	wp.mu.RLock()
 	defer wp.mu.RUnlock()
 	return wp.active
+}
+
+// GetContext returns the worker pool context
+func (wp *WorkerPool) GetContext() context.Context {
+	return wp.ctx
 }

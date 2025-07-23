@@ -125,18 +125,22 @@ LOG_LEVEL=info  # debug, info, warn, error, fatal
 
 ### Variáveis de Ambiente
 
-| Variável             | Descrição                     | Padrão               |
-| -------------------- | ----------------------------- | -------------------- |
-| `RABBITMQ_HOST`      | Host do RabbitMQ              | `localhost`          |
-| `RABBITMQ_PORT`      | Porta do RabbitMQ             | `5672`               |
-| `RABBITMQ_USER`      | Usuário do RabbitMQ           | `guest`              |
-| `RABBITMQ_PASSWORD`  | Senha do RabbitMQ             | `guest`              |
-| `WORKER_POOL_SIZE`   | Tamanho do pool de workers    | `5`                  |
-| `MAX_RETRIES`        | Máximo de tentativas          | `3`                  |
-| `RETRY_DELAY`        | Delay entre tentativas        | `1000ms`             |
-| `PUBLISH_INTERVAL`   | Intervalo de publicação       | `2s`                 |
-| `PUBLISH_BATCH_SIZE` | Tamanho do lote de publicação | `10`                 |
-| `EVENT_SOURCE`       | Fonte dos eventos             | `gohopper-publisher` |
+| Variável                    | Descrição                               | Padrão               |
+| --------------------------- | --------------------------------------- | -------------------- |
+| `RABBITMQ_HOST`             | Host do RabbitMQ                        | `localhost`          |
+| `RABBITMQ_PORT`             | Porta do RabbitMQ                       | `5672`               |
+| `RABBITMQ_USER`             | Usuário do RabbitMQ                     | `guest`              |
+| `RABBITMQ_PASSWORD`         | Senha do RabbitMQ                       | `guest`              |
+| `WORKER_POOL_SIZE`          | Tamanho do pool de workers              | `5`                  |
+| `MAX_RETRIES`               | Máximo de tentativas                    | `3`                  |
+| `RETRY_DELAY`               | Delay entre tentativas                  | `1000ms`             |
+| `PUBLISH_INTERVAL`          | Intervalo de publicação                 | `2s`                 |
+| `PUBLISH_BATCH_SIZE`        | Tamanho do lote de publicação           | `10`                 |
+| `EVENT_SOURCE`              | Fonte dos eventos                       | `gohopper-publisher` |
+| `WORKER_SHUTDOWN_TIMEOUT`   | Timeout para parada do worker pool      | `30s`                |
+| `CONSUMER_SHUTDOWN_TIMEOUT` | Timeout para parada do consumer         | `10s`                |
+| `STATS_REPORT_INTERVAL`     | Intervalo de relatórios de estatísticas | `30s`                |
+| `HEALTH_CHECK_INTERVAL`     | Intervalo de health check               | `60s`                |
 
 ## 🏗️ Arquitetura
 
@@ -188,6 +192,10 @@ O consumer do Gohopper implementa processamento concorrente com worker pool:
 - **Dead Letter Queue (DLQ)**: Mensagens com falha são enviadas para DLQ
 - **Acknowledgment**: Confirmação manual de processamento bem-sucedido
 - **Trace ID**: Rastreamento completo de mensagens através do sistema
+- **WaitGroup**: Sincronização de goroutines com controle de finalização
+- **Graceful Shutdown**: Encerramento seguro com timeout configurável
+- **Signal Handling**: Controle de processo com SIGINT/SIGTERM
+- **Health Check**: Monitoramento contínuo do estado do worker pool
 
 ### Configuração
 
@@ -208,6 +216,42 @@ make run-consumer-tag
 | ---------- | ----------------- | ------------------- |
 | `-workers` | Número de workers | `5`                 |
 | `-tag`     | Tag do consumer   | `gohopper-consumer` |
+
+### Controle de Processo
+
+O consumer implementa controle robusto de processo com:
+
+#### **Graceful Shutdown**
+
+- **SIGINT/SIGTERM**: Captura sinais de interrupção
+- **WaitGroup**: Sincroniza finalização de todas as goroutines
+- **Timeout Configurável**: Evita travamento em caso de falha
+- **Context Cancellation**: Propaga cancelamento para todas as goroutines
+
+#### **Goroutines Coordenadas**
+
+- **Worker Pool**: Workers sincronizados com WaitGroup
+- **Stats Reporting**: Relatórios periódicos com controle de vida
+- **Health Check**: Monitoramento contínuo com graceful shutdown
+- **Message Consumption**: Consumo de mensagens com context cancellation
+
+#### **Logs de Shutdown**
+
+```json
+{
+  "level": "info",
+  "message": "Shutdown signal received",
+  "signal": "SIGINT/SIGTERM"
+}
+{
+  "level": "info",
+  "message": "All workers stopped gracefully"
+}
+{
+  "level": "info",
+  "message": "All goroutines stopped gracefully"
+}
+```
 
 ### Estrutura do Evento
 

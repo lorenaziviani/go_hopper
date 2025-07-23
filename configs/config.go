@@ -11,6 +11,7 @@ type Config struct {
 	App      AppConfig
 	Worker   WorkerConfig
 	Queue    QueueConfig
+	Consumer ConsumerConfig
 }
 
 type RabbitMQConfig struct {
@@ -27,9 +28,10 @@ type AppConfig struct {
 }
 
 type WorkerConfig struct {
-	PoolSize   int
-	MaxRetries int
-	RetryDelay time.Duration
+	PoolSize        int
+	MaxRetries      int
+	RetryDelay      time.Duration
+	ShutdownTimeout time.Duration
 }
 
 type QueueConfig struct {
@@ -38,6 +40,12 @@ type QueueConfig struct {
 	RoutingKey   string
 	DLQName      string
 	DLQExchange  string
+}
+
+type ConsumerConfig struct {
+	ShutdownTimeout     time.Duration
+	StatsReportInterval time.Duration
+	HealthCheckInterval time.Duration
 }
 
 // Load gets the environment variables and returns a Config struct
@@ -55,9 +63,10 @@ func Load() *Config {
 			LogLevel: getEnv("LOG_LEVEL", "info"),
 		},
 		Worker: WorkerConfig{
-			PoolSize:   getEnvAsInt("WORKER_POOL_SIZE", 5),
-			MaxRetries: getEnvAsInt("MAX_RETRIES", 3),
-			RetryDelay: getEnvAsDuration("RETRY_DELAY", 1000*time.Millisecond),
+			PoolSize:        getEnvAsInt("WORKER_POOL_SIZE", 5),
+			MaxRetries:      getEnvAsInt("MAX_RETRIES", 3),
+			RetryDelay:      getEnvAsDuration("RETRY_DELAY", 1000*time.Millisecond),
+			ShutdownTimeout: getEnvAsDuration("WORKER_SHUTDOWN_TIMEOUT", 30*time.Second),
 		},
 		Queue: QueueConfig{
 			Name:         getEnv("QUEUE_NAME", "events"),
@@ -65,6 +74,11 @@ func Load() *Config {
 			RoutingKey:   getEnv("ROUTING_KEY", "event.*"),
 			DLQName:      getEnv("DLQ_NAME", "events_dlq"),
 			DLQExchange:  getEnv("DLQ_EXCHANGE", "events_dlq_exchange"),
+		},
+		Consumer: ConsumerConfig{
+			ShutdownTimeout:     getEnvAsDuration("CONSUMER_SHUTDOWN_TIMEOUT", 10*time.Second),
+			StatsReportInterval: getEnvAsDuration("STATS_REPORT_INTERVAL", 30*time.Second),
+			HealthCheckInterval: getEnvAsDuration("HEALTH_CHECK_INTERVAL", 60*time.Second),
 		},
 	}
 }

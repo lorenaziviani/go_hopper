@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
+	"gohopper/configs"
 	"gohopper/internal/logger"
 	"gohopper/internal/processor"
 	"gohopper/internal/queue"
@@ -30,6 +31,8 @@ func main() {
 		fmt.Printf("Warning: .env file not found\n")
 	}
 
+	cfg := configs.Load()
+
 	loggerInstance := logger.NewLogger()
 	ctx := logger.CreateTraceContext()
 
@@ -37,11 +40,11 @@ func main() {
 		"mode":         "consumer",
 		"worker_count": workerCount,
 		"consumer_tag": consumerTag,
+		"config":       cfg,
 	})
 
 	queueManager := queue.NewManager()
 
-	// Connect to RabbitMQ
 	if err := queueManager.Connect(); err != nil {
 		loggerInstance.Fatal(ctx, "Failed to connect to RabbitMQ", logger.Fields{
 			"error": err.Error(),
@@ -49,7 +52,6 @@ func main() {
 	}
 	defer queueManager.Close()
 
-	// Configure queues and exchanges
 	if err := queueManager.SetupQueues(); err != nil {
 		loggerInstance.Fatal(ctx, "Failed to setup queues", logger.Fields{
 			"error": err.Error(),
@@ -59,55 +61,89 @@ func main() {
 	loggerInstance.Info(ctx, "Consumer configured successfully", nil)
 
 	handler := processor.NewDefaultMessageHandler()
-
 	workerPool := processor.NewWorkerPool(workerCount, handler)
 
-	// Start worker pool
 	if err := workerPool.Start(ctx); err != nil {
 		loggerInstance.Fatal(ctx, "Failed to start worker pool", logger.Fields{
 			"error": err.Error(),
 		})
 	}
 
-	consumerCtx, cancel := context.WithCancel(ctx)
+	mainCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	var wg sync.WaitGroup
+
 	// Start consuming messages
-	if err := queueManager.ConsumeMessages(consumerCtx, consumerTag, func(message *queue.EventMessage, delivery amqp.Delivery) error {
-		return processMessageWithWorkerPool(consumerCtx, message, delivery, workerPool)
+	if err := queueManager.ConsumeMessages(mainCtx, consumerTag, func(message *queue.EventMessage, delivery amqp.Delivery) error {
+		return processMessageWithWorkerPool(mainCtx, message, delivery, workerPool, cfg)
 	}); err != nil {
 		loggerInstance.Fatal(ctx, "Failed to start consuming messages", logger.Fields{
 			"error": err.Error(),
 		})
 	}
 
-	// Setup graceful shutdown
+	// Setup graceful shutdown with signal handling
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	go reportStats(ctx, queueManager, workerPool)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		reportStats(mainCtx, queueManager, workerPool, cfg)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		healthCheck(mainCtx, workerPool, loggerInstance, cfg)
+	}()
+
+	loggerInstance.Info(ctx, "Consumer started successfully", logger.Fields{
+		"worker_count": workerCount,
+		"consumer_tag": consumerTag,
+	})
 
 	// Wait for shutdown signal
 	<-sigChan
-	loggerInstance.Info(ctx, "Shutting down consumer", nil)
+	loggerInstance.Info(ctx, "Shutdown signal received", logger.Fields{
+		"signal": "SIGINT/SIGTERM",
+	})
+
+	cancel()
 
 	if err := workerPool.Stop(ctx); err != nil {
 		loggerInstance.Error(ctx, "Error stopping worker pool", err, nil)
 	}
 
-	cancel()
+	// Wait for all goroutines to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		loggerInstance.Info(ctx, "All goroutines stopped gracefully", nil)
+	case <-time.After(cfg.Consumer.ShutdownTimeout):
+		loggerInstance.Warn(ctx, "Timeout waiting for goroutines to stop", logger.Fields{
+			"timeout": cfg.Consumer.ShutdownTimeout,
+		})
+	}
+
 	loggerInstance.Info(ctx, "Consumer stopped successfully", nil)
 }
 
 // processMessageWithWorkerPool processes a message using the worker pool
-func processMessageWithWorkerPool(ctx context.Context, message *queue.EventMessage, delivery amqp.Delivery, workerPool *processor.WorkerPool) error {
+func processMessageWithWorkerPool(ctx context.Context, message *queue.EventMessage, delivery amqp.Delivery, workerPool *processor.WorkerPool, cfg *configs.Config) error {
 	job := &processor.Job{
 		Message:    message,
 		Delivery:   delivery,
 		ReceivedAt: time.Now(),
 		RetryCount: message.Metadata.RetryCount,
-		MaxRetries: getMaxRetries(),
-		RetryDelay: getRetryDelay(),
+		MaxRetries: cfg.Worker.MaxRetries,
+		RetryDelay: cfg.Worker.RetryDelay,
 	}
 
 	if err := workerPool.SubmitJob(ctx, job); err != nil {
@@ -118,8 +154,8 @@ func processMessageWithWorkerPool(ctx context.Context, message *queue.EventMessa
 }
 
 // reportStats reports queue and worker pool statistics periodically
-func reportStats(ctx context.Context, queueManager *queue.Manager, workerPool *processor.WorkerPool) {
-	ticker := time.NewTicker(30 * time.Second)
+func reportStats(ctx context.Context, queueManager *queue.Manager, workerPool *processor.WorkerPool, cfg *configs.Config) {
+	ticker := time.NewTicker(cfg.Consumer.StatsReportInterval)
 	defer ticker.Stop()
 
 	loggerInstance := logger.NewLogger()
@@ -141,27 +177,37 @@ func reportStats(ctx context.Context, queueManager *queue.Manager, workerPool *p
 			})
 
 		case <-ctx.Done():
+			loggerInstance.Info(ctx, "Stats reporting stopped", nil)
 			return
 		}
 	}
 }
 
-// getMaxRetries gets the maximum number of retries from environment
-func getMaxRetries() int {
-	if retries := os.Getenv("MAX_RETRIES"); retries != "" {
-		if val, err := strconv.Atoi(retries); err == nil {
-			return val
-		}
-	}
-	return 3
-}
+// healthCheck performs periodic health checks on the worker pool
+func healthCheck(ctx context.Context, workerPool *processor.WorkerPool, loggerInstance *logger.Logger, cfg *configs.Config) {
+	ticker := time.NewTicker(cfg.Consumer.HealthCheckInterval)
+	defer ticker.Stop()
 
-// getRetryDelay gets the retry delay from environment
-func getRetryDelay() time.Duration {
-	if delay := os.Getenv("RETRY_DELAY"); delay != "" {
-		if val, err := time.ParseDuration(delay); err == nil {
-			return val
+	for {
+		select {
+		case <-ticker.C:
+			stats := workerPool.GetStats()
+
+			if !workerPool.IsActive() {
+				loggerInstance.Warn(ctx, "Worker pool is not active", logger.Fields{
+					"stats": stats,
+				})
+			}
+
+			if stats["context_done"].(bool) {
+				loggerInstance.Warn(ctx, "Worker pool context is done", logger.Fields{
+					"stats": stats,
+				})
+			}
+
+		case <-ctx.Done():
+			loggerInstance.Info(ctx, "Health check stopped", nil)
+			return
 		}
 	}
-	return 1000 * time.Millisecond
 }

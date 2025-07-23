@@ -323,6 +323,7 @@ func (m *Manager) ConsumeMessages(ctx context.Context, consumerTag string, handl
 			case <-ctx.Done():
 				m.logger.Info(ctx, "Stopping message consumption", logger.Fields{
 					"consumer_tag": consumerTag,
+					"reason":       "context cancelled",
 				})
 				return
 			}
