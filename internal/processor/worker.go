@@ -13,6 +13,56 @@ import (
 	"github.com/streadway/amqp"
 )
 
+// Semaphore represents a custom semaphore for concurrency control
+type Semaphore struct {
+	permits chan struct{}
+	mu      sync.RWMutex
+	active  int
+	max     int
+}
+
+// NewSemaphore creates a new semaphore with the specified capacity
+func NewSemaphore(capacity int) *Semaphore {
+	return &Semaphore{
+		permits: make(chan struct{}, capacity),
+		max:     capacity,
+	}
+}
+
+// Acquire acquires a permit from the semaphore
+func (s *Semaphore) Acquire(ctx context.Context) error {
+	select {
+	case s.permits <- struct{}{}:
+		s.mu.Lock()
+		s.active++
+		s.mu.Unlock()
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Release releases a permit back to the semaphore
+func (s *Semaphore) Release() {
+	s.mu.Lock()
+	s.active--
+	s.mu.Unlock()
+	<-s.permits
+}
+
+// GetStats returns semaphore statistics
+func (s *Semaphore) GetStats() map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return map[string]interface{}{
+		"active":      s.active,
+		"max":         s.max,
+		"available":   s.max - s.active,
+		"utilization": float64(s.active) / float64(s.max) * 100,
+	}
+}
+
 // Job represents a message processing job
 type Job struct {
 	Message      *queue.EventMessage
@@ -26,14 +76,15 @@ type Job struct {
 
 // Worker represents a worker in the pool
 type Worker struct {
-	ID       int
-	jobChan  chan *Job
-	quitChan chan bool
-	wg       *sync.WaitGroup
-	logger   *logger.Logger
-	handler  MessageHandler
-	ctx      context.Context
-	cancel   context.CancelFunc
+	ID        int
+	jobChan   chan *Job
+	quitChan  chan bool
+	wg        *sync.WaitGroup
+	logger    *logger.Logger
+	handler   MessageHandler
+	ctx       context.Context
+	cancel    context.CancelFunc
+	semaphore *Semaphore
 }
 
 // MessageHandler defines the interface for processing messages
@@ -54,6 +105,7 @@ type WorkerPool struct {
 	mu         sync.RWMutex
 	ctx        context.Context
 	cancel     context.CancelFunc
+	semaphore  *Semaphore
 }
 
 // NewWorkerPool creates a new worker pool
@@ -69,6 +121,7 @@ func NewWorkerPool(maxWorkers int, handler MessageHandler) *WorkerPool {
 		active:     false,
 		ctx:        ctx,
 		cancel:     cancel,
+		semaphore:  NewSemaphore(maxWorkers),
 	}
 }
 
@@ -82,7 +135,8 @@ func (wp *WorkerPool) Start(ctx context.Context) error {
 	}
 
 	wp.logger.Info(ctx, "Starting worker pool", logger.Fields{
-		"max_workers": wp.maxWorkers,
+		"max_workers":        wp.maxWorkers,
+		"semaphore_capacity": wp.semaphore.max,
 	})
 
 	for i := 0; i < wp.maxWorkers; i++ {
@@ -93,7 +147,8 @@ func (wp *WorkerPool) Start(ctx context.Context) error {
 
 	wp.active = true
 	wp.logger.Info(ctx, "Worker pool started successfully", logger.Fields{
-		"worker_count": len(wp.workers),
+		"worker_count":       len(wp.workers),
+		"semaphore_capacity": wp.semaphore.max,
 	})
 
 	return nil
@@ -120,7 +175,6 @@ func (wp *WorkerPool) Stop(ctx context.Context) error {
 		close(done)
 	}()
 
-	// Use default timeout of 30 seconds if not provided in context
 	timeout := 30 * time.Second
 	if deadline, ok := ctx.Deadline(); ok {
 		timeout = time.Until(deadline)
@@ -178,14 +232,15 @@ func (wp *WorkerPool) SubmitJob(ctx context.Context, job *Job) error {
 func (wp *WorkerPool) newWorker(id int) *Worker {
 	workerCtx, cancel := context.WithCancel(wp.ctx)
 	return &Worker{
-		ID:       id,
-		jobChan:  wp.jobChan,
-		quitChan: wp.quitChan,
-		wg:       &wp.wg,
-		logger:   wp.logger,
-		handler:  wp.handler,
-		ctx:      workerCtx,
-		cancel:   cancel,
+		ID:        id,
+		jobChan:   wp.jobChan,
+		quitChan:  wp.quitChan,
+		wg:        &wp.wg,
+		logger:    wp.logger,
+		handler:   wp.handler,
+		ctx:       workerCtx,
+		cancel:    cancel,
+		semaphore: wp.semaphore,
 	}
 }
 
@@ -220,7 +275,7 @@ func (w *Worker) run(ctx context.Context) {
 	for {
 		select {
 		case job := <-w.jobChan:
-			w.processJobWithRetry(workerCtx, job)
+			w.processJobWithSemaphore(workerCtx, job)
 		case <-w.quitChan:
 			w.logger.Info(workerCtx, "Worker received quit signal", logger.Fields{
 				"worker_id": w.ID,
@@ -238,6 +293,33 @@ func (w *Worker) run(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// processJobWithSemaphore processes a job with semaphore concurrency control
+func (w *Worker) processJobWithSemaphore(ctx context.Context, job *Job) {
+	if err := w.semaphore.Acquire(ctx); err != nil {
+		w.logger.Error(ctx, "Failed to acquire semaphore permit", err, logger.Fields{
+			"worker_id":  w.ID,
+			"message_id": job.Message.ID,
+		})
+		return
+	}
+
+	defer w.semaphore.Release()
+
+	w.logger.Debug(ctx, "Semaphore permit acquired", logger.Fields{
+		"worker_id":       w.ID,
+		"message_id":      job.Message.ID,
+		"semaphore_stats": w.semaphore.GetStats(),
+	})
+
+	w.processJobWithRetry(ctx, job)
+
+	w.logger.Debug(ctx, "Semaphore permit released", logger.Fields{
+		"worker_id":       w.ID,
+		"message_id":      job.Message.ID,
+		"semaphore_stats": w.semaphore.GetStats(),
+	})
 }
 
 // processJobWithRetry processes a job with retry logic
@@ -516,12 +598,13 @@ func (wp *WorkerPool) GetStats() map[string]interface{} {
 	defer wp.mu.RUnlock()
 
 	return map[string]interface{}{
-		"active":       wp.active,
-		"worker_count": len(wp.workers),
-		"max_workers":  wp.maxWorkers,
-		"queue_size":   len(wp.jobChan),
-		"queue_cap":    cap(wp.jobChan),
-		"context_done": wp.ctx.Err() != nil,
+		"active":          wp.active,
+		"worker_count":    len(wp.workers),
+		"max_workers":     wp.maxWorkers,
+		"queue_size":      len(wp.jobChan),
+		"queue_cap":       cap(wp.jobChan),
+		"context_done":    wp.ctx.Err() != nil,
+		"semaphore_stats": wp.semaphore.GetStats(),
 	}
 }
 

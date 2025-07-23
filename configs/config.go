@@ -33,6 +33,7 @@ type WorkerConfig struct {
 	RetryDelay      time.Duration
 	RetryTimeout    time.Duration
 	ShutdownTimeout time.Duration
+	MaxConcurrent   int
 }
 
 type QueueConfig struct {
@@ -69,6 +70,7 @@ func Load() *Config {
 			RetryDelay:      getEnvAsDuration("RETRY_DELAY", 1000*time.Millisecond),
 			RetryTimeout:    getEnvAsDuration("RETRY_TIMEOUT", 30*time.Second),
 			ShutdownTimeout: getEnvAsDuration("WORKER_SHUTDOWN_TIMEOUT", 30*time.Second),
+			MaxConcurrent:   getEnvAsInt("MAX_CONCURRENT", 5),
 		},
 		Queue: QueueConfig{
 			Name:         getEnv("QUEUE_NAME", "events"),

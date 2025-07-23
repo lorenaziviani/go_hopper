@@ -61,7 +61,7 @@ func main() {
 	loggerInstance.Info(ctx, "Consumer configured successfully", nil)
 
 	handler := processor.NewDefaultMessageHandler()
-	workerPool := processor.NewWorkerPool(workerCount, handler)
+	workerPool := processor.NewWorkerPool(cfg.Worker.MaxConcurrent, handler)
 
 	if err := workerPool.Start(ctx); err != nil {
 		loggerInstance.Fatal(ctx, "Failed to start worker pool", logger.Fields{

@@ -125,24 +125,25 @@ LOG_LEVEL=info  # debug, info, warn, error, fatal
 
 ### Variáveis de Ambiente
 
-| Variável                    | Descrição                               | Padrão               |
-| --------------------------- | --------------------------------------- | -------------------- |
-| `RABBITMQ_HOST`             | Host do RabbitMQ                        | `localhost`          |
-| `RABBITMQ_PORT`             | Porta do RabbitMQ                       | `5672`               |
-| `RABBITMQ_USER`             | Usuário do RabbitMQ                     | `guest`              |
-| `RABBITMQ_PASSWORD`         | Senha do RabbitMQ                       | `guest`              |
-| `WORKER_POOL_SIZE`          | Tamanho do pool de workers              | `5`                  |
-| `MAX_RETRIES`               | Máximo de tentativas                    | `3`                  |
-| `RETRY_DELAY`               | Delay entre tentativas                  | `1000ms`             |
-| `RETRY_TIMEOUT`             | Timeout para cada tentativa             | `30s`                |
-| `DLQ_NAME`                  | Nome da fila DLQ                        | `events_dlq`         |
-| `PUBLISH_INTERVAL`          | Intervalo de publicação                 | `2s`                 |
-| `PUBLISH_BATCH_SIZE`        | Tamanho do lote de publicação           | `10`                 |
-| `EVENT_SOURCE`              | Fonte dos eventos                       | `gohopper-publisher` |
-| `WORKER_SHUTDOWN_TIMEOUT`   | Timeout para parada do worker pool      | `30s`                |
-| `CONSUMER_SHUTDOWN_TIMEOUT` | Timeout para parada do consumer         | `10s`                |
-| `STATS_REPORT_INTERVAL`     | Intervalo de relatórios de estatísticas | `30s`                |
-| `HEALTH_CHECK_INTERVAL`     | Intervalo de health check               | `60s`                |
+| Variável                    | Descrição                                | Padrão               |
+| --------------------------- | ---------------------------------------- | -------------------- |
+| `RABBITMQ_HOST`             | Host do RabbitMQ                         | `localhost`          |
+| `RABBITMQ_PORT`             | Porta do RabbitMQ                        | `5672`               |
+| `RABBITMQ_USER`             | Usuário do RabbitMQ                      | `guest`              |
+| `RABBITMQ_PASSWORD`         | Senha do RabbitMQ                        | `guest`              |
+| `WORKER_POOL_SIZE`          | Tamanho do pool de workers               | `5`                  |
+| `MAX_RETRIES`               | Máximo de tentativas                     | `3`                  |
+| `RETRY_DELAY`               | Delay entre tentativas                   | `1000ms`             |
+| `RETRY_TIMEOUT`             | Timeout para cada tentativa              | `30s`                |
+| `MAX_CONCURRENT`            | Máximo de workers ativos simultaneamente | `5`                  |
+| `DLQ_NAME`                  | Nome da fila DLQ                         | `events_dlq`         |
+| `PUBLISH_INTERVAL`          | Intervalo de publicação                  | `2s`                 |
+| `PUBLISH_BATCH_SIZE`        | Tamanho do lote de publicação            | `10`                 |
+| `EVENT_SOURCE`              | Fonte dos eventos                        | `gohopper-publisher` |
+| `WORKER_SHUTDOWN_TIMEOUT`   | Timeout para parada do worker pool       | `30s`                |
+| `CONSUMER_SHUTDOWN_TIMEOUT` | Timeout para parada do consumer          | `10s`                |
+| `STATS_REPORT_INTERVAL`     | Intervalo de relatórios de estatísticas  | `30s`                |
+| `HEALTH_CHECK_INTERVAL`     | Intervalo de health check                | `60s`                |
 
 ## 🏗️ Arquitetura
 
@@ -194,6 +195,7 @@ O consumer do Gohopper implementa processamento concorrente com worker pool:
 - **Context Timeout**: Timeout configurável para cada tentativa de processamento
 - **Dead Letter Queue (DLQ)**: Sistema robusto de DLQ com separação de tipos de falha
 - **DLQ Consumer**: Consumer específico para processar mensagens falhadas
+- **Semáforo Customizado**: Controle de concorrência via semáforo com chan struct{}
 - **Acknowledgment**: Confirmação manual de processamento bem-sucedido
 - **Trace ID**: Rastreamento completo de mensagens através do sistema
 - **WaitGroup**: Sincronização de goroutines com controle de finalização
@@ -342,6 +344,83 @@ go run ./cmd/dlq-consumer -tag=my-dlq-consumer
   "dlq_reason": "max_retries_exceeded",
   "dlq_timestamp": "2025-07-23T11:47:30-03:00",
   "final_error": "simulated error processing user.created event"
+}
+```
+
+### Semáforo Customizado
+
+O sistema implementa controle de concorrência via semáforo customizado:
+
+#### **Características do Semáforo**
+
+- **Controle de Concorrência**: Limita workers ativos simultaneamente
+- **Implementação Customizada**: Usando `chan struct{}`
+- **Context Awareness**: Respeita context cancellation
+- **Estatísticas em Tempo Real**: Monitoramento de utilização
+- **Thread-Safe**: Mutex para operações concorrentes
+
+#### **Implementação**
+
+```go
+type Semaphore struct {
+	permits chan struct{}
+	mu      sync.RWMutex
+	active  int
+	max     int
+}
+
+func (s *Semaphore) Acquire(ctx context.Context) error {
+	select {
+	case s.permits <- struct{}{}:
+		s.mu.Lock()
+		s.active++
+		s.mu.Unlock()
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *Semaphore) Release() {
+	s.mu.Lock()
+	s.active--
+	s.mu.Unlock()
+	<-s.permits
+}
+```
+
+#### **Configuração**
+
+```bash
+# Máximo de workers ativos simultaneamente
+MAX_CONCURRENT=5
+```
+
+#### **Estatísticas do Semáforo**
+
+```json
+{
+  "active": 3,
+  "max": 5,
+  "available": 2,
+  "utilization": 60.0
+}
+```
+
+#### **Logs de Semáforo**
+
+```json
+{
+  "level": "debug",
+  "message": "Semaphore permit acquired",
+  "worker_id": 1,
+  "message_id": "550e8400-e29b-41d4-a716-446655440000",
+  "semaphore_stats": {
+    "active": 3,
+    "max": 5,
+    "available": 2,
+    "utilization": 60.0
+  }
 }
 ```
 

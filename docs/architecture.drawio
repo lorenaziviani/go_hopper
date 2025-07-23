@@ -25,7 +25,7 @@
                 <mxCell id="dlqConsumer" value="DLQ Consumer&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(cmd/dlq-consumer)&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;Failure Analysis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
                     <mxGeometry x="150" y="430" width="120" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="workerPool" value="Worker Pool&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(internal/processor)&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;Retry + Timeout&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" parent="1" vertex="1">
+                <mxCell id="workerPool" value="Worker Pool&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(internal/processor)&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;Retry + Timeout + Semaphore&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="530" y="260" width="180" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="worker1" value="Worker 1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" parent="1" vertex="1">
