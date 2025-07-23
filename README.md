@@ -135,6 +135,7 @@ LOG_LEVEL=info  # debug, info, warn, error, fatal
 | `MAX_RETRIES`               | Máximo de tentativas                    | `3`                  |
 | `RETRY_DELAY`               | Delay entre tentativas                  | `1000ms`             |
 | `RETRY_TIMEOUT`             | Timeout para cada tentativa             | `30s`                |
+| `DLQ_NAME`                  | Nome da fila DLQ                        | `events_dlq`         |
 | `PUBLISH_INTERVAL`          | Intervalo de publicação                 | `2s`                 |
 | `PUBLISH_BATCH_SIZE`        | Tamanho do lote de publicação           | `10`                 |
 | `EVENT_SOURCE`              | Fonte dos eventos                       | `gohopper-publisher` |
@@ -191,7 +192,8 @@ O consumer do Gohopper implementa processamento concorrente com worker pool:
 
 - **Retry com Backoff Exponencial**: Tentativas automáticas com delay crescente e jitter
 - **Context Timeout**: Timeout configurável para cada tentativa de processamento
-- **Dead Letter Queue (DLQ)**: Mensagens com falha são enviadas para DLQ
+- **Dead Letter Queue (DLQ)**: Sistema robusto de DLQ com separação de tipos de falha
+- **DLQ Consumer**: Consumer específico para processar mensagens falhadas
 - **Acknowledgment**: Confirmação manual de processamento bem-sucedido
 - **Trace ID**: Rastreamento completo de mensagens através do sistema
 - **WaitGroup**: Sincronização de goroutines com controle de finalização
@@ -285,6 +287,63 @@ maxDelay = 30s
 - **Timeout por Tentativa**: Configurável via `RETRY_TIMEOUT`
 - **Cancellation**: Respeita context cancellation durante retry
 - **Graceful Handling**: Logs detalhados de timeout e cancellation
+
+### Dead Letter Queue (DLQ)
+
+O sistema implementa DLQ robusto com separação clara de tipos de falha:
+
+#### **Tipos de Falha**
+
+- **Retryable**: Erros temporários que podem ser retryados
+- **Non-Retryable**: Erros permanentes enviados direto para DLQ
+- **Max Retries Exceeded**: Após esgotar tentativas
+- **Timeout**: Timeout de processamento
+- **Context Cancelled**: Cancelação de contexto
+
+#### **Estratégia de DLQ**
+
+```go
+// Determinação automática do tipo de falha
+switch failureType {
+case FailureTypeRetryable:
+    // Reject para retry
+case FailureTypeNonRetryable:
+    // Enviar direto para DLQ
+case FailureTypeMaxRetries:
+    // Enviar para DLQ após max tentativas
+case FailureTypeTimeout:
+    // Enviar para DLQ por timeout
+case FailureTypeContext:
+    // Reject para retry (context pode ser temporário)
+}
+```
+
+#### **DLQ Consumer**
+
+```bash
+# Executar consumer específico para DLQ
+make run-dlq-consumer
+
+# Com tag customizada
+go run ./cmd/dlq-consumer -tag=my-dlq-consumer
+```
+
+#### **Processamento de DLQ**
+
+- **Max Retries**: Alerting, review manual, recovery
+- **Timeout**: Análise de performance, scaling
+- **Non-Retryable**: Validação de dados, migração de schema
+- **Unknown**: Processamento genérico
+
+#### **Metadados de DLQ**
+
+```json
+{
+  "dlq_reason": "max_retries_exceeded",
+  "dlq_timestamp": "2025-07-23T11:47:30-03:00",
+  "final_error": "simulated error processing user.created event"
+}
+```
 
 ```json
 {

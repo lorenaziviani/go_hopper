@@ -333,6 +333,55 @@ func (m *Manager) ConsumeMessages(ctx context.Context, consumerTag string, handl
 	return nil
 }
 
+// ConsumeDLQMessages starts consuming messages from the DLQ
+func (m *Manager) ConsumeDLQMessages(ctx context.Context, consumerTag string, handler func(*EventMessage, amqp.Delivery) error) error {
+	if m.channel == nil {
+		return fmt.Errorf("channel not initialized")
+	}
+
+	dlqName := getEnv("DLQ_NAME", "events_dlq")
+
+	msgs, err := m.channel.Consume(
+		dlqName,     // queue
+		consumerTag, // consumer
+		false,       // auto-ack
+		false,       // exclusive
+		false,       // no-local
+		false,       // no-wait
+		nil,         // args
+	)
+	if err != nil {
+		m.logger.Error(ctx, "Failed to start consuming DLQ", err, logger.Fields{
+			"dlq_name":     dlqName,
+			"consumer_tag": consumerTag,
+		})
+		return fmt.Errorf("failed to start consuming DLQ: %w", err)
+	}
+
+	m.logger.Info(ctx, "Started consuming DLQ messages", logger.Fields{
+		"dlq_name":     dlqName,
+		"consumer_tag": consumerTag,
+	})
+
+	// Process messages in a separate goroutine
+	go func() {
+		for {
+			select {
+			case msg := <-msgs:
+				m.processDLQMessage(ctx, msg, handler)
+			case <-ctx.Done():
+				m.logger.Info(ctx, "Stopping DLQ message consumption", logger.Fields{
+					"consumer_tag": consumerTag,
+					"reason":       "context cancelled",
+				})
+				return
+			}
+		}
+	}()
+
+	return nil
+}
+
 // processMessage processes a single message
 func (m *Manager) processMessage(ctx context.Context, delivery amqp.Delivery, handler func(*EventMessage, amqp.Delivery) error) {
 	message, err := m.encoder.Decode(delivery.Body)
@@ -364,6 +413,49 @@ func (m *Manager) processMessage(ctx context.Context, delivery amqp.Delivery, ha
 		})
 	} else {
 		m.logger.Info(messageCtx, "Message processed successfully", logger.Fields{
+			"message_id":   message.ID,
+			"message_type": message.Type,
+			"delivery_tag": delivery.DeliveryTag,
+		})
+	}
+}
+
+// processDLQMessage processes a single DLQ message
+func (m *Manager) processDLQMessage(ctx context.Context, delivery amqp.Delivery, handler func(*EventMessage, amqp.Delivery) error) {
+	// Decode message
+	message, err := m.encoder.Decode(delivery.Body)
+	if err != nil {
+		m.logger.Error(ctx, "Failed to decode DLQ message", err, logger.Fields{
+			"delivery_tag": delivery.DeliveryTag,
+			"body_size":    len(delivery.Body),
+		})
+
+		// Reject the message
+		if err := delivery.Reject(false); err != nil {
+			m.logger.Error(ctx, "Failed to reject undecodable DLQ message", err, nil)
+		}
+		return
+	}
+
+	// Create context with message trace ID
+	messageCtx := context.WithValue(ctx, "trace_id", message.TraceID)
+
+	m.logger.LogMessageReceived(messageCtx, message.ID, message.Type, message.Source, logger.Fields{
+		"delivery_tag": delivery.DeliveryTag,
+		"routing_key":  delivery.RoutingKey,
+		"exchange":     delivery.Exchange,
+		"dlq_reason":   message.Metadata.DLQReason,
+	})
+
+	// Process the message
+	if err := handler(message, delivery); err != nil {
+		m.logger.Error(messageCtx, "DLQ message processing failed", err, logger.Fields{
+			"message_id":   message.ID,
+			"message_type": message.Type,
+			"delivery_tag": delivery.DeliveryTag,
+		})
+	} else {
+		m.logger.Info(messageCtx, "DLQ message processed successfully", logger.Fields{
 			"message_id":   message.ID,
 			"message_type": message.Type,
 			"delivery_tag": delivery.DeliveryTag,

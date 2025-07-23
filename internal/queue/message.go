@@ -21,13 +21,17 @@ type EventMessage struct {
 	CorrelationID string                 `json:"correlation_id,omitempty"`
 }
 
-// MessageMetadata contains additional message metadata
+// MessageMetadata contains metadata about the message
 type MessageMetadata struct {
-	Priority   int                    `json:"priority"`
-	RetryCount int                    `json:"retry_count"`
-	TTL        *time.Duration         `json:"ttl,omitempty"`
-	Headers    map[string]interface{} `json:"headers,omitempty"`
-	Tags       []string               `json:"tags,omitempty"`
+	Timestamp    time.Time              `json:"timestamp"`
+	RetryCount   int                    `json:"retry_count"`
+	Priority     int                    `json:"priority"`
+	TTL          *time.Duration         `json:"ttl,omitempty"`
+	Headers      map[string]interface{} `json:"headers,omitempty"`
+	Tags         []string               `json:"tags,omitempty"`
+	DLQReason    string                 `json:"dlq_reason,omitempty"`
+	DLQTimestamp time.Time              `json:"dlq_timestamp,omitempty"`
+	FinalError   string                 `json:"final_error,omitempty"`
 }
 
 // MessageEncoder interface for message encoding

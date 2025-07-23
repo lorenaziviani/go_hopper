@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -262,7 +263,8 @@ func (w *Worker) processJobWithRetry(ctx context.Context, job *Job) {
 			"max_retries":        job.MaxRetries,
 		})
 
-		w.handleDLQ(messageCtx, job, err)
+		failureType := w.determineFailureType(err, job)
+		w.handleFailure(messageCtx, job, err, failureType)
 	} else {
 		w.logger.LogMessageProcessed(messageCtx, job.Message.ID, job.Message.Type, job.Message.Source, processingTime, logger.Fields{
 			"worker_id": w.ID,
@@ -274,6 +276,169 @@ func (w *Worker) processJobWithRetry(ctx context.Context, job *Job) {
 				"message_id": job.Message.ID,
 			})
 		}
+	}
+}
+
+// FailureType represents the type of failure
+type FailureType string
+
+const (
+	FailureTypeRetryable    FailureType = "retryable"
+	FailureTypeNonRetryable FailureType = "non_retryable"
+	FailureTypeMaxRetries   FailureType = "max_retries_exceeded"
+	FailureTypeTimeout      FailureType = "timeout"
+	FailureTypeContext      FailureType = "context_cancelled"
+)
+
+// determineFailureType determines the type of failure based on error and retry count
+func (w *Worker) determineFailureType(err error, job *Job) FailureType {
+	if err == context.Canceled || err == context.DeadlineExceeded {
+		return FailureTypeContext
+	}
+
+	if err.Error() == "processing timeout" || err.Error() == "user.created processing timeout" ||
+		err.Error() == "order.created processing timeout" {
+		return FailureTypeTimeout
+	}
+
+	if job.RetryCount >= job.MaxRetries {
+		return FailureTypeMaxRetries
+	}
+
+	if w.isRetryableError(err) {
+		return FailureTypeRetryable
+	}
+
+	return FailureTypeNonRetryable
+}
+
+// isRetryableError determines if an error is retryable
+func (w *Worker) isRetryableError(err error) bool {
+	retryablePatterns := []string{
+		"connection refused",
+		"timeout",
+		"temporary failure",
+		"service unavailable",
+		"rate limit exceeded",
+		"simulated error", // For testing purposes
+	}
+
+	errMsg := err.Error()
+	for _, pattern := range retryablePatterns {
+		if strings.Contains(strings.ToLower(errMsg), pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// handleFailure handles different types of failures
+func (w *Worker) handleFailure(ctx context.Context, job *Job, err error, failureType FailureType) {
+	switch failureType {
+	case FailureTypeRetryable:
+		w.handleRetryableFailure(ctx, job, err)
+	case FailureTypeNonRetryable:
+		w.handleNonRetryableFailure(ctx, job, err)
+	case FailureTypeMaxRetries:
+		w.handleMaxRetriesFailure(ctx, job, err)
+	case FailureTypeTimeout:
+		w.handleTimeoutFailure(ctx, job, err)
+	case FailureTypeContext:
+		w.handleContextFailure(ctx, job, err)
+	default:
+		w.handleNonRetryableFailure(ctx, job, err)
+	}
+}
+
+// handleRetryableFailure handles retryable failures
+func (w *Worker) handleRetryableFailure(ctx context.Context, job *Job, err error) {
+	w.logger.Warn(ctx, "Retryable failure detected", logger.Fields{
+		"worker_id":   w.ID,
+		"message_id":  job.Message.ID,
+		"error":       err.Error(),
+		"retry_count": job.RetryCount,
+		"max_retries": job.MaxRetries,
+	})
+
+	if rejectErr := job.Delivery.Reject(false); rejectErr != nil {
+		w.logger.Error(ctx, "Failed to reject message for retry", rejectErr, logger.Fields{
+			"worker_id":  w.ID,
+			"message_id": job.Message.ID,
+		})
+	}
+}
+
+// handleNonRetryableFailure handles non-retryable failures
+func (w *Worker) handleNonRetryableFailure(ctx context.Context, job *Job, err error) {
+	w.logger.Error(ctx, "Non-retryable failure detected", err, logger.Fields{
+		"worker_id":   w.ID,
+		"message_id":  job.Message.ID,
+		"retry_count": job.RetryCount,
+	})
+
+	w.sendToDLQ(ctx, job, err, "non_retryable_failure")
+}
+
+// handleMaxRetriesFailure handles failures after max retries
+func (w *Worker) handleMaxRetriesFailure(ctx context.Context, job *Job, err error) {
+	w.logger.Error(ctx, "Max retries exceeded", err, logger.Fields{
+		"worker_id":   w.ID,
+		"message_id":  job.Message.ID,
+		"retry_count": job.RetryCount,
+		"max_retries": job.MaxRetries,
+	})
+
+	w.sendToDLQ(ctx, job, err, "max_retries_exceeded")
+}
+
+// handleTimeoutFailure handles timeout failures
+func (w *Worker) handleTimeoutFailure(ctx context.Context, job *Job, err error) {
+	w.logger.Error(ctx, "Processing timeout failure", err, logger.Fields{
+		"worker_id":   w.ID,
+		"message_id":  job.Message.ID,
+		"retry_count": job.RetryCount,
+		"timeout":     job.RetryTimeout,
+	})
+
+	w.sendToDLQ(ctx, job, err, "processing_timeout")
+}
+
+// handleContextFailure handles context cancellation failures
+func (w *Worker) handleContextFailure(ctx context.Context, job *Job, err error) {
+	w.logger.Warn(ctx, "Context cancellation failure", logger.Fields{
+		"worker_id":   w.ID,
+		"message_id":  job.Message.ID,
+		"error":       err.Error(),
+		"retry_count": job.RetryCount,
+	})
+
+	if rejectErr := job.Delivery.Reject(false); rejectErr != nil {
+		w.logger.Error(ctx, "Failed to reject message after context cancellation", rejectErr, logger.Fields{
+			"worker_id":  w.ID,
+			"message_id": job.Message.ID,
+		})
+	}
+}
+
+// sendToDLQ sends a message to the Dead Letter Queue
+func (w *Worker) sendToDLQ(ctx context.Context, job *Job, err error, reason string) {
+	job.Message.Metadata.DLQReason = reason
+	job.Message.Metadata.DLQTimestamp = time.Now()
+	job.Message.Metadata.FinalError = err.Error()
+
+	w.logger.LogMessageDLQ(ctx, job.Message.ID, job.Message.Type, job.Message.Source, err.Error(), logger.Fields{
+		"worker_id":   w.ID,
+		"max_retries": job.MaxRetries,
+		"retry_count": job.RetryCount,
+		"dlq_reason":  reason,
+	})
+
+	if err := job.Delivery.Reject(false); err != nil {
+		w.logger.Error(ctx, "Failed to reject message for DLQ", err, logger.Fields{
+			"worker_id":  w.ID,
+			"message_id": job.Message.ID,
+		})
 	}
 }
 
@@ -343,22 +508,6 @@ func (w *Worker) calculateExponentialBackoff(attempt int, baseDelay time.Duratio
 	}
 
 	return delay
-}
-
-// handleDLQ handles sending message to Dead Letter Queue
-func (w *Worker) handleDLQ(ctx context.Context, job *Job, err error) {
-	w.logger.LogMessageDLQ(ctx, job.Message.ID, job.Message.Type, job.Message.Source, err.Error(), logger.Fields{
-		"worker_id":   w.ID,
-		"max_retries": job.MaxRetries,
-		"retry_count": job.RetryCount,
-	})
-
-	if err := job.Delivery.Reject(false); err != nil {
-		w.logger.Error(ctx, "Failed to reject message for DLQ", err, logger.Fields{
-			"worker_id":  w.ID,
-			"message_id": job.Message.ID,
-		})
-	}
 }
 
 // GetStats returns worker pool statistics

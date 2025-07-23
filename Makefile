@@ -23,6 +23,10 @@ run-consumer: ## Run the consumer
 	@echo "Running consumer..."
 	go run ./cmd/consumer
 
+run-dlq-consumer: ## Run the DLQ consumer
+	@echo "Running DLQ consumer..."
+	go run ./cmd/dlq-consumer
+
 run-consumer-workers: ## Run consumer with custom worker count
 	@echo "Running consumer with custom worker count..."
 	@go run ./cmd/consumer -workers=10
