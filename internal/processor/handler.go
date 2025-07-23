@@ -30,8 +30,19 @@ func (h *DefaultMessageHandler) ProcessMessage(ctx context.Context, message *que
 		"priority":     message.Metadata.Priority,
 	})
 
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("context cancelled: %w", ctx.Err())
+	default:
+	}
+
 	processingTime := h.getProcessingTime(message.Type)
-	time.Sleep(processingTime)
+
+	select {
+	case <-time.After(processingTime):
+	case <-ctx.Done():
+		return fmt.Errorf("processing timeout: %w", ctx.Err())
+	}
 
 	switch message.Type {
 	case "user.created":
@@ -56,8 +67,23 @@ func (h *DefaultMessageHandler) processUserCreated(ctx context.Context, message 
 		"user_id":    h.extractUserID(message),
 	})
 
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("user.created processing cancelled: %w", ctx.Err())
+	default:
+	}
+
 	if h.shouldSimulateError(message) {
 		return fmt.Errorf("simulated error processing user.created event")
+	}
+
+	if h.shouldSimulateTimeout(message) {
+		select {
+		case <-time.After(60 * time.Second):
+			return fmt.Errorf("user.created processing timeout")
+		case <-ctx.Done():
+			return fmt.Errorf("user.created processing cancelled: %w", ctx.Err())
+		}
 	}
 
 	h.logger.Info(ctx, "User created successfully", logger.Fields{
@@ -74,6 +100,12 @@ func (h *DefaultMessageHandler) processUserUpdated(ctx context.Context, message 
 		"message_id": message.ID,
 		"user_id":    h.extractUserID(message),
 	})
+
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("user.updated processing cancelled: %w", ctx.Err())
+	default:
+	}
 
 	if h.shouldSimulateError(message) {
 		return fmt.Errorf("simulated error processing user.updated event")
@@ -93,8 +125,23 @@ func (h *DefaultMessageHandler) processOrderCreated(ctx context.Context, message
 		"message_id": message.ID,
 	})
 
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("order.created processing cancelled: %w", ctx.Err())
+	default:
+	}
+
 	if h.shouldSimulateError(message) {
 		return fmt.Errorf("simulated error processing order.created event")
+	}
+
+	if h.shouldSimulateTimeout(message) {
+		select {
+		case <-time.After(45 * time.Second):
+			return fmt.Errorf("order.created processing timeout")
+		case <-ctx.Done():
+			return fmt.Errorf("order.created processing cancelled: %w", ctx.Err())
+		}
 	}
 
 	h.logger.Info(ctx, "Order created successfully", logger.Fields{
@@ -109,6 +156,12 @@ func (h *DefaultMessageHandler) processPaymentProcessed(ctx context.Context, mes
 	h.logger.Info(ctx, "Processing payment.processed event", logger.Fields{
 		"message_id": message.ID,
 	})
+
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("payment.processed processing cancelled: %w", ctx.Err())
+	default:
+	}
 
 	if h.shouldSimulateError(message) {
 		return fmt.Errorf("simulated error processing payment.processed event")
@@ -126,6 +179,12 @@ func (h *DefaultMessageHandler) processNotificationSent(ctx context.Context, mes
 	h.logger.Info(ctx, "Processing notification.sent event", logger.Fields{
 		"message_id": message.ID,
 	})
+
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("notification.sent processing cancelled: %w", ctx.Err())
+	default:
+	}
 
 	if h.shouldSimulateError(message) {
 		return fmt.Errorf("simulated error processing notification.sent event")
@@ -179,6 +238,16 @@ func (h *DefaultMessageHandler) shouldSimulateError(message *queue.EventMessage)
 	if message.Metadata.RetryCount == 0 {
 		lastChar := message.ID[len(message.ID)-1]
 		return lastChar == '0' || lastChar == '5'
+	}
+
+	return false
+}
+
+// shouldSimulateTimeout determines if we should simulate a timeout for testing
+func (h *DefaultMessageHandler) shouldSimulateTimeout(message *queue.EventMessage) bool {
+	if message.Metadata.RetryCount == 0 {
+		lastChar := message.ID[len(message.ID)-1]
+		return lastChar == '2' || lastChar == '7'
 	}
 
 	return false

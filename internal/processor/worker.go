@@ -14,12 +14,13 @@ import (
 
 // Job represents a message processing job
 type Job struct {
-	Message    *queue.EventMessage
-	Delivery   amqp.Delivery
-	ReceivedAt time.Time
-	RetryCount int
-	MaxRetries int
-	RetryDelay time.Duration
+	Message      *queue.EventMessage
+	Delivery     amqp.Delivery
+	ReceivedAt   time.Time
+	RetryCount   int
+	MaxRetries   int
+	RetryDelay   time.Duration
+	RetryTimeout time.Duration
 }
 
 // Worker represents a worker in the pool
@@ -218,7 +219,7 @@ func (w *Worker) run(ctx context.Context) {
 	for {
 		select {
 		case job := <-w.jobChan:
-			w.processJob(workerCtx, job)
+			w.processJobWithRetry(workerCtx, job)
 		case <-w.quitChan:
 			w.logger.Info(workerCtx, "Worker received quit signal", logger.Fields{
 				"worker_id": w.ID,
@@ -238,8 +239,8 @@ func (w *Worker) run(ctx context.Context) {
 	}
 }
 
-// processJob processes a single job
-func (w *Worker) processJob(ctx context.Context, job *Job) {
+// processJobWithRetry processes a job with retry logic
+func (w *Worker) processJobWithRetry(ctx context.Context, job *Job) {
 	startTime := time.Now()
 
 	messageCtx := context.WithValue(ctx, "trace_id", job.Message.TraceID)
@@ -250,7 +251,7 @@ func (w *Worker) processJob(ctx context.Context, job *Job) {
 		"queue_time_ms": time.Since(job.ReceivedAt).Milliseconds(),
 	})
 
-	err := w.handler.ProcessMessage(messageCtx, job.Message)
+	err := w.processWithRetry(messageCtx, job)
 
 	processingTime := time.Since(startTime)
 
@@ -258,13 +259,10 @@ func (w *Worker) processJob(ctx context.Context, job *Job) {
 		w.logger.LogMessageFailed(messageCtx, job.Message.ID, job.Message.Type, job.Message.Source, err, job.RetryCount, logger.Fields{
 			"worker_id":          w.ID,
 			"processing_time_ms": processingTime.Milliseconds(),
+			"max_retries":        job.MaxRetries,
 		})
 
-		if job.RetryCount < job.MaxRetries {
-			w.handleRetry(messageCtx, job)
-		} else {
-			w.handleDLQ(messageCtx, job, err)
-		}
+		w.handleDLQ(messageCtx, job, err)
 	} else {
 		w.logger.LogMessageProcessed(messageCtx, job.Message.ID, job.Message.Type, job.Message.Source, processingTime, logger.Fields{
 			"worker_id": w.ID,
@@ -279,20 +277,72 @@ func (w *Worker) processJob(ctx context.Context, job *Job) {
 	}
 }
 
-// handleRetry handles message retry logic
-func (w *Worker) handleRetry(ctx context.Context, job *Job) {
-	delay := w.calculateBackoffDelay(job.RetryCount, job.RetryDelay)
+// processWithRetry processes a message with exponential backoff retry
+func (w *Worker) processWithRetry(ctx context.Context, job *Job) error {
+	var lastErr error
 
-	w.logger.LogMessageRetry(ctx, job.Message.ID, job.Message.Type, job.Message.Source, job.RetryCount, delay, logger.Fields{
-		"worker_id": w.ID,
-	})
+	for attempt := 0; attempt <= job.MaxRetries; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, job.RetryTimeout)
 
-	if err := job.Delivery.Reject(false); err != nil {
-		w.logger.Error(ctx, "Failed to reject message for retry", err, logger.Fields{
-			"worker_id":  w.ID,
-			"message_id": job.Message.ID,
+		err := w.handler.ProcessMessage(attemptCtx, job.Message)
+		cancel()
+
+		if err == nil {
+			if attempt > 0 {
+				w.logger.Info(ctx, "Message processed successfully after retry", logger.Fields{
+					"worker_id":   w.ID,
+					"message_id":  job.Message.ID,
+					"attempt":     attempt,
+					"retry_count": job.RetryCount,
+				})
+			}
+			return nil
+		}
+
+		lastErr = err
+
+		if attempt == job.MaxRetries {
+			break
+		}
+
+		delay := w.calculateExponentialBackoff(attempt, job.RetryDelay)
+
+		w.logger.LogMessageRetry(ctx, job.Message.ID, job.Message.Type, job.Message.Source, attempt, delay, logger.Fields{
+			"worker_id":   w.ID,
+			"attempt":     attempt,
+			"max_retries": job.MaxRetries,
+			"error":       err.Error(),
 		})
+
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			w.logger.Info(ctx, "Retry cancelled due to context cancellation", logger.Fields{
+				"worker_id":  w.ID,
+				"message_id": job.Message.ID,
+				"attempt":    attempt,
+			})
+			return ctx.Err()
+		}
 	}
+
+	return fmt.Errorf("message processing failed after %d attempts: %w", job.MaxRetries+1, lastErr)
+}
+
+// calculateExponentialBackoff calculates exponential backoff delay
+func (w *Worker) calculateExponentialBackoff(attempt int, baseDelay time.Duration) time.Duration {
+	multiplier := 1 << attempt
+	delay := time.Duration(multiplier) * baseDelay
+
+	jitter := time.Duration(float64(delay) * 0.1) // 10% jitter
+	delay += time.Duration(float64(jitter) * (0.5 + 0.5*float64(attempt%10)/10))
+
+	maxDelay := 30 * time.Second
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+
+	return delay
 }
 
 // handleDLQ handles sending message to Dead Letter Queue
@@ -300,6 +350,7 @@ func (w *Worker) handleDLQ(ctx context.Context, job *Job, err error) {
 	w.logger.LogMessageDLQ(ctx, job.Message.ID, job.Message.Type, job.Message.Source, err.Error(), logger.Fields{
 		"worker_id":   w.ID,
 		"max_retries": job.MaxRetries,
+		"retry_count": job.RetryCount,
 	})
 
 	if err := job.Delivery.Reject(false); err != nil {
@@ -308,19 +359,6 @@ func (w *Worker) handleDLQ(ctx context.Context, job *Job, err error) {
 			"message_id": job.Message.ID,
 		})
 	}
-}
-
-// calculateBackoffDelay calculates exponential backoff delay
-func (w *Worker) calculateBackoffDelay(retryCount int, baseDelay time.Duration) time.Duration {
-	multiplier := 1 << retryCount
-	delay := time.Duration(multiplier) * baseDelay
-
-	maxDelay := 30 * time.Second
-	if delay > maxDelay {
-		delay = maxDelay
-	}
-
-	return delay
 }
 
 // GetStats returns worker pool statistics

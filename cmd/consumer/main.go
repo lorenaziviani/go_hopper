@@ -138,12 +138,13 @@ func main() {
 // processMessageWithWorkerPool processes a message using the worker pool
 func processMessageWithWorkerPool(ctx context.Context, message *queue.EventMessage, delivery amqp.Delivery, workerPool *processor.WorkerPool, cfg *configs.Config) error {
 	job := &processor.Job{
-		Message:    message,
-		Delivery:   delivery,
-		ReceivedAt: time.Now(),
-		RetryCount: message.Metadata.RetryCount,
-		MaxRetries: cfg.Worker.MaxRetries,
-		RetryDelay: cfg.Worker.RetryDelay,
+		Message:      message,
+		Delivery:     delivery,
+		ReceivedAt:   time.Now(),
+		RetryCount:   message.Metadata.RetryCount,
+		MaxRetries:   cfg.Worker.MaxRetries,
+		RetryDelay:   cfg.Worker.RetryDelay,
+		RetryTimeout: cfg.Worker.RetryTimeout,
 	}
 
 	if err := workerPool.SubmitJob(ctx, job); err != nil {

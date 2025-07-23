@@ -134,6 +134,7 @@ LOG_LEVEL=info  # debug, info, warn, error, fatal
 | `WORKER_POOL_SIZE`          | Tamanho do pool de workers              | `5`                  |
 | `MAX_RETRIES`               | Máximo de tentativas                    | `3`                  |
 | `RETRY_DELAY`               | Delay entre tentativas                  | `1000ms`             |
+| `RETRY_TIMEOUT`             | Timeout para cada tentativa             | `30s`                |
 | `PUBLISH_INTERVAL`          | Intervalo de publicação                 | `2s`                 |
 | `PUBLISH_BATCH_SIZE`        | Tamanho do lote de publicação           | `10`                 |
 | `EVENT_SOURCE`              | Fonte dos eventos                       | `gohopper-publisher` |
@@ -188,7 +189,8 @@ O consumer do Gohopper implementa processamento concorrente com worker pool:
 
 ### Recursos Avançados
 
-- **Retry com Backoff Exponencial**: Tentativas automáticas com delay crescente
+- **Retry com Backoff Exponencial**: Tentativas automáticas com delay crescente e jitter
+- **Context Timeout**: Timeout configurável para cada tentativa de processamento
 - **Dead Letter Queue (DLQ)**: Mensagens com falha são enviadas para DLQ
 - **Acknowledgment**: Confirmação manual de processamento bem-sucedido
 - **Trace ID**: Rastreamento completo de mensagens através do sistema
@@ -236,6 +238,53 @@ O consumer implementa controle robusto de processo com:
 - **Message Consumption**: Consumo de mensagens com context cancellation
 
 #### **Logs de Shutdown**
+
+### Retry com Exponential Backoff
+
+O sistema implementa retry robusto com exponential backoff:
+
+#### **Características do Retry**
+
+- **Tentativas Limitadas**: Configurável via `MAX_RETRIES` (padrão: 3)
+- **Exponential Backoff**: Delay crescente entre tentativas (base \* 2^attempt)
+- **Jitter**: Variação aleatória para evitar thundering herd
+- **Context Timeout**: Timeout configurável para cada tentativa
+- **Graceful Cancellation**: Respeita context cancellation
+
+#### **Fórmula do Backoff**
+
+```
+delay = baseDelay * 2^attempt + jitter
+jitter = delay * 0.1 * (0.5 + 0.5 * random)
+maxDelay = 30s
+```
+
+#### **Exemplo de Retry**
+
+```json
+{
+  "level": "warn",
+  "message": "Message retry scheduled",
+  "message_id": "550e8400-e29b-41d4-a716-446655440000",
+  "attempt": 1,
+  "max_retries": 3,
+  "retry_delay_ms": 2000,
+  "error": "simulated error processing user.created event"
+}
+{
+  "level": "info",
+  "message": "Message processed successfully after retry",
+  "message_id": "550e8400-e29b-41d4-a716-446655440000",
+  "attempt": 2,
+  "retry_count": 0
+}
+```
+
+#### **Context Timeout**
+
+- **Timeout por Tentativa**: Configurável via `RETRY_TIMEOUT`
+- **Cancellation**: Respeita context cancellation durante retry
+- **Graceful Handling**: Logs detalhados de timeout e cancellation
 
 ```json
 {

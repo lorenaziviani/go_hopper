@@ -31,6 +31,7 @@ type WorkerConfig struct {
 	PoolSize        int
 	MaxRetries      int
 	RetryDelay      time.Duration
+	RetryTimeout    time.Duration
 	ShutdownTimeout time.Duration
 }
 
@@ -66,6 +67,7 @@ func Load() *Config {
 			PoolSize:        getEnvAsInt("WORKER_POOL_SIZE", 5),
 			MaxRetries:      getEnvAsInt("MAX_RETRIES", 3),
 			RetryDelay:      getEnvAsDuration("RETRY_DELAY", 1000*time.Millisecond),
+			RetryTimeout:    getEnvAsDuration("RETRY_TIMEOUT", 30*time.Second),
 			ShutdownTimeout: getEnvAsDuration("WORKER_SHUTDOWN_TIMEOUT", 30*time.Second),
 		},
 		Queue: QueueConfig{
