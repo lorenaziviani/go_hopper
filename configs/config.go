@@ -48,6 +48,7 @@ type ConsumerConfig struct {
 	ShutdownTimeout     time.Duration
 	StatsReportInterval time.Duration
 	HealthCheckInterval time.Duration
+	MetricsPort         string
 }
 
 // Load gets the environment variables and returns a Config struct
@@ -83,6 +84,7 @@ func Load() *Config {
 			ShutdownTimeout:     getEnvAsDuration("CONSUMER_SHUTDOWN_TIMEOUT", 10*time.Second),
 			StatsReportInterval: getEnvAsDuration("STATS_REPORT_INTERVAL", 30*time.Second),
 			HealthCheckInterval: getEnvAsDuration("HEALTH_CHECK_INTERVAL", 60*time.Second),
+			MetricsPort:         getEnv("METRICS_PORT", "8080"),
 		},
 	}
 }

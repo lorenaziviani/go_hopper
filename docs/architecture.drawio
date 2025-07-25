@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram name="Gohopper Architecture" id="architecture">
-        <mxGraphModel dx="2023" dy="1435" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+        <mxGraphModel dx="1823" dy="1435" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -19,10 +19,10 @@
                 <mxCell id="dlq" value="Dead Letter Queue&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(events_dlq)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="240" y="290" width="100" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="consumer" value="Consumer&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(cmd/consumer)&lt;/font&gt;&lt;/span&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 10px;&quot;&gt;Worker Pool&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;WaitGroup + SIGINT&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" parent="1" vertex="1">
+                <mxCell id="consumer" value="Consumer&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(cmd/consumer)&lt;/font&gt;&lt;/span&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 10px;&quot;&gt;Worker Pool&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;WaitGroup + SIGINT&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;Prometheus Metrics&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" parent="1" vertex="1">
                     <mxGeometry x="560" y="90" width="120" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="dlqConsumer" value="DLQ Consumer&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(cmd/dlq-consumer)&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;Failure Analysis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+                <mxCell id="dlqConsumer" value="DLQ Consumer&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(cmd/dlq-consumer)&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;Failure Analysis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="150" y="430" width="120" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="workerPool" value="Worker Pool&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(internal/processor)&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;Retry + Timeout + Semaphore&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" parent="1" vertex="1">
@@ -45,6 +45,9 @@
                 </mxCell>
                 <mxCell id="env" value=".env" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="590" y="-10" width="60" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="prometheus" value="Prometheus&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79);&quot;&gt;(Metrics Server)&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;Port 8080&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="750" y="100" width="120" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="messageSchema" value="Message Schema&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 10px;&quot;&gt;EventMessage&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;color: rgb(79, 79, 79); font-size: 9px;&quot;&gt;JSON Encoder&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="-60" y="240" width="120" height="60" as="geometry"/>
@@ -133,7 +136,13 @@
                         <mxPoint x="610" y="160" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="conn15" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#b85450;" edge="1" parent="1" source="dlq" target="dlqConsumer">
+                <mxCell id="conn16" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#9673a6;" parent="1" source="consumer" target="prometheus" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="680" y="130" as="sourcePoint"/>
+                        <mxPoint x="750" y="130" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn15" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#b85450;" parent="1" source="dlq" target="dlqConsumer" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">
                         <mxPoint x="340" y="325" as="sourcePoint"/>
                         <mxPoint x="550" y="260" as="targetPoint"/>
@@ -150,6 +159,9 @@
                 </mxCell>
                 <mxCell id="label4" value="Config" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#666666;" parent="1" vertex="1">
                     <mxGeometry x="90" y="380" width="40" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="label5" value="Metrics" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#9673a6;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="110" width="40" height="20" as="geometry"/>
                 </mxCell>
             </root>
         </mxGraphModel>

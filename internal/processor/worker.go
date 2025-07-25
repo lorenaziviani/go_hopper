@@ -5,13 +5,108 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gohopper/internal/logger"
+	"gohopper/internal/metrics"
 	"gohopper/internal/queue"
 
 	"github.com/streadway/amqp"
 )
+
+// Metrics represents shared metrics for the worker pool
+type Metrics struct {
+	unsafeMetrics map[string]int64
+
+	safeMetrics  map[string]int64
+	metricsMutex sync.RWMutex
+
+	syncMetrics sync.Map
+
+	atomicMetrics struct {
+		processedCount int64
+		failedCount    int64
+		retryCount     int64
+		dlqCount       int64
+	}
+}
+
+// NewMetrics creates a new metrics instance
+func NewMetrics() *Metrics {
+	return &Metrics{
+		unsafeMetrics: make(map[string]int64),
+		safeMetrics:   make(map[string]int64),
+	}
+}
+
+// UnsafeIncrement - RACE CONDITION PRONE
+func (m *Metrics) UnsafeIncrement(key string) {
+	// This is intentionally unsafe to demonstrate race condition
+	m.unsafeMetrics[key]++
+}
+
+// SafeIncrementWithMutex - Thread-safe with mutex
+func (m *Metrics) SafeIncrementWithMutex(key string) {
+	m.metricsMutex.Lock()
+	defer m.metricsMutex.Unlock()
+	m.safeMetrics[key]++
+}
+
+// SafeIncrementWithSyncMap - Thread-safe with sync.Map
+func (m *Metrics) SafeIncrementWithSyncMap(key string) {
+	if existing, loaded := m.syncMetrics.Load(key); loaded {
+		value := existing.(int64)
+		m.syncMetrics.Store(key, value+1)
+	} else {
+		m.syncMetrics.Store(key, int64(1))
+	}
+}
+
+// AtomicIncrement - Thread-safe with atomic operations
+func (m *Metrics) AtomicIncrement(metricType string) {
+	switch metricType {
+	case "processed":
+		atomic.AddInt64(&m.atomicMetrics.processedCount, 1)
+	case "failed":
+		atomic.AddInt64(&m.atomicMetrics.failedCount, 1)
+	case "retry":
+		atomic.AddInt64(&m.atomicMetrics.retryCount, 1)
+	case "dlq":
+		atomic.AddInt64(&m.atomicMetrics.dlqCount, 1)
+	}
+}
+
+// GetMetrics returns all metrics in a thread-safe way
+func (m *Metrics) GetMetrics() map[string]interface{} {
+	metrics := make(map[string]interface{})
+
+	metrics["unsafe_metrics"] = m.unsafeMetrics
+
+	m.metricsMutex.RLock()
+	safeMetricsCopy := make(map[string]int64)
+	for k, v := range m.safeMetrics {
+		safeMetricsCopy[k] = v
+	}
+	m.metricsMutex.RUnlock()
+	metrics["safe_metrics"] = safeMetricsCopy
+
+	syncMetricsCopy := make(map[string]int64)
+	m.syncMetrics.Range(func(key, value interface{}) bool {
+		syncMetricsCopy[key.(string)] = value.(int64)
+		return true
+	})
+	metrics["sync_metrics"] = syncMetricsCopy
+
+	metrics["atomic_metrics"] = map[string]int64{
+		"processed": atomic.LoadInt64(&m.atomicMetrics.processedCount),
+		"failed":    atomic.LoadInt64(&m.atomicMetrics.failedCount),
+		"retry":     atomic.LoadInt64(&m.atomicMetrics.retryCount),
+		"dlq":       atomic.LoadInt64(&m.atomicMetrics.dlqCount),
+	}
+
+	return metrics
+}
 
 // Semaphore represents a custom semaphore for concurrency control
 type Semaphore struct {
@@ -85,6 +180,8 @@ type Worker struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	semaphore *Semaphore
+	metrics   *Metrics
+	pool      *WorkerPool
 }
 
 // MessageHandler defines the interface for processing messages
@@ -106,6 +203,8 @@ type WorkerPool struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	semaphore  *Semaphore
+	metrics    *Metrics
+	prometheus *metrics.PrometheusMetrics
 }
 
 // NewWorkerPool creates a new worker pool
@@ -122,6 +221,8 @@ func NewWorkerPool(maxWorkers int, handler MessageHandler) *WorkerPool {
 		ctx:        ctx,
 		cancel:     cancel,
 		semaphore:  NewSemaphore(maxWorkers),
+		metrics:    NewMetrics(),
+		prometheus: metrics.NewPrometheusMetrics(),
 	}
 }
 
@@ -241,6 +342,8 @@ func (wp *WorkerPool) newWorker(id int) *Worker {
 		ctx:       workerCtx,
 		cancel:    cancel,
 		semaphore: wp.semaphore,
+		metrics:   wp.metrics,
+		pool:      wp,
 	}
 }
 
@@ -345,6 +448,12 @@ func (w *Worker) processJobWithRetry(ctx context.Context, job *Job) {
 			"max_retries":        job.MaxRetries,
 		})
 
+		// Update metrics with race condition simulation
+		w.updateMetricsWithRaceCondition(job.Message.Type, "failed")
+
+		// Update Prometheus metrics
+		w.updatePrometheusMetrics("failed", processingTime)
+
 		failureType := w.determineFailureType(err, job)
 		w.handleFailure(messageCtx, job, err, failureType)
 	} else {
@@ -352,12 +461,52 @@ func (w *Worker) processJobWithRetry(ctx context.Context, job *Job) {
 			"worker_id": w.ID,
 		})
 
+		// Update metrics with race condition simulation
+		w.updateMetricsWithRaceCondition(job.Message.Type, "processed")
+
+		// Update Prometheus metrics
+		w.updatePrometheusMetrics("processed", processingTime)
+
 		if err := job.Delivery.Ack(false); err != nil {
 			w.logger.Error(messageCtx, "Failed to acknowledge message", err, logger.Fields{
 				"worker_id":  w.ID,
 				"message_id": job.Message.ID,
 			})
 		}
+	}
+}
+
+// updateMetricsWithRaceCondition simulates race condition in metrics
+func (w *Worker) updateMetricsWithRaceCondition(messageType, status string) {
+	// Simulate race condition with unsafe metrics
+	w.metrics.UnsafeIncrement(fmt.Sprintf("%s_%s", messageType, status))
+
+	// Safe metrics with mutex
+	w.metrics.SafeIncrementWithMutex(fmt.Sprintf("%s_%s", messageType, status))
+
+	// Safe metrics with sync.Map
+	w.metrics.SafeIncrementWithSyncMap(fmt.Sprintf("%s_%s", messageType, status))
+
+	// Safe metrics with atomic operations
+	w.metrics.AtomicIncrement(status)
+}
+
+// updatePrometheusMetrics updates Prometheus metrics
+func (w *Worker) updatePrometheusMetrics(status string, processingTime time.Duration) {
+	if w.pool != nil && w.pool.prometheus != nil {
+		// Record processing duration
+		w.pool.prometheus.ObserveProcessingDuration(processingTime)
+
+		// Increment appropriate counters
+		switch status {
+		case "processed":
+			w.pool.prometheus.IncrementMessagesProcessed()
+		case "failed":
+			w.pool.prometheus.IncrementMessagesFailed()
+		}
+
+		// Update current stats
+		w.pool.UpdatePrometheusMetrics()
 	}
 }
 
@@ -442,6 +591,11 @@ func (w *Worker) handleRetryableFailure(ctx context.Context, job *Job, err error
 		"retry_count": job.RetryCount,
 		"max_retries": job.MaxRetries,
 	})
+
+	// Update Prometheus metrics for retry
+	if w.pool != nil && w.pool.prometheus != nil {
+		w.pool.prometheus.IncrementRetryAttempts()
+	}
 
 	if rejectErr := job.Delivery.Reject(false); rejectErr != nil {
 		w.logger.Error(ctx, "Failed to reject message for retry", rejectErr, logger.Fields{
@@ -605,6 +759,8 @@ func (wp *WorkerPool) GetStats() map[string]interface{} {
 		"queue_cap":       cap(wp.jobChan),
 		"context_done":    wp.ctx.Err() != nil,
 		"semaphore_stats": wp.semaphore.GetStats(),
+		"metrics":         wp.metrics.GetMetrics(),
+		"prometheus":      "available at /metrics endpoint",
 	}
 }
 
@@ -618,4 +774,27 @@ func (wp *WorkerPool) IsActive() bool {
 // GetContext returns the worker pool context
 func (wp *WorkerPool) GetContext() context.Context {
 	return wp.ctx
+}
+
+// GetPrometheusMetrics returns the Prometheus metrics instance
+func (wp *WorkerPool) GetPrometheusMetrics() *metrics.PrometheusMetrics {
+	return wp.prometheus
+}
+
+// UpdatePrometheusMetrics updates Prometheus metrics with current stats
+func (wp *WorkerPool) UpdatePrometheusMetrics() {
+	wp.mu.RLock()
+	defer wp.mu.RUnlock()
+
+	// Update active workers count
+	activeCount := 0
+	for _, worker := range wp.workers {
+		if worker != nil {
+			activeCount++
+		}
+	}
+	wp.prometheus.SetActiveWorkers(activeCount)
+
+	// Update queue size
+	wp.prometheus.SetQueueSize(len(wp.jobChan))
 }

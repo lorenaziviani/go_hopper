@@ -83,8 +83,27 @@ make publish
 ## 📊 Monitoramento
 
 - **RabbitMQ Management UI**: http://localhost:15672
+
   - Usuário: `guest`
   - Senha: `guest`
+
+- **Prometheus Metrics**: http://localhost:8080/metrics
+
+  - Endpoint para coleta de métricas do Prometheus
+  - Métricas disponíveis:
+    - `messages_processed_total`: Total de mensagens processadas com sucesso
+    - `messages_failed_total`: Total de mensagens que falharam
+    - `retry_attempts_total`: Total de tentativas de retry
+    - `processing_duration_seconds`: Duração do processamento (histograma)
+    - `active_workers`: Número de workers ativos
+    - `queue_size`: Tamanho atual da fila de jobs
+
+- **Health Check**: http://localhost:8080/health
+
+  - Endpoint para verificação de saúde do sistema
+
+- **Dashboard**: http://localhost:8080/
+  - Interface web com links para métricas e health check
 
 ## 📝 Logging
 
@@ -144,6 +163,7 @@ LOG_LEVEL=info  # debug, info, warn, error, fatal
 | `CONSUMER_SHUTDOWN_TIMEOUT` | Timeout para parada do consumer          | `10s`                |
 | `STATS_REPORT_INTERVAL`     | Intervalo de relatórios de estatísticas  | `30s`                |
 | `HEALTH_CHECK_INTERVAL`     | Intervalo de health check                | `60s`                |
+| `METRICS_PORT`              | Porta do servidor de métricas Prometheus | `8080`               |
 
 ## 🏗️ Arquitetura
 
@@ -438,6 +458,95 @@ MAX_CONCURRENT=5
   "level": "info",
   "message": "All goroutines stopped gracefully"
 }
+```
+
+## 📈 Métricas Prometheus
+
+O Gohopper inclui métricas Prometheus para monitoramento em tempo real:
+
+### **Métricas Disponíveis**
+
+#### **Counters (Contadores)**
+
+- `messages_processed_total`: Total de mensagens processadas com sucesso
+- `messages_failed_total`: Total de mensagens que falharam no processamento
+- `retry_attempts_total`: Total de tentativas de retry realizadas
+
+#### **Histograms (Histogramas)**
+
+- `processing_duration_seconds`: Duração do processamento de mensagens
+  - Buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
+
+#### **Gauges (Medidores)**
+
+- `active_workers`: Número atual de workers ativos
+- `queue_size`: Tamanho atual da fila de jobs
+
+### **Exemplo de Métricas**
+
+```bash
+# HELP messages_processed_total Total number of messages processed successfully
+# TYPE messages_processed_total counter
+messages_processed_total 42
+
+# HELP messages_failed_total Total number of messages that failed processing
+# TYPE messages_failed_total counter
+messages_failed_total 3
+
+# HELP retry_attempts_total Total number of retry attempts
+# TYPE retry_attempts_total counter
+retry_attempts_total 8
+
+# HELP processing_duration_seconds Time spent processing messages
+# TYPE processing_duration_seconds histogram
+processing_duration_seconds_bucket{le="0.005"} 0
+processing_duration_seconds_bucket{le="0.01"} 5
+processing_duration_seconds_bucket{le="0.025"} 15
+processing_duration_seconds_bucket{le="0.05"} 25
+processing_duration_seconds_bucket{le="0.1"} 35
+processing_duration_seconds_bucket{le="0.25"} 40
+processing_duration_seconds_bucket{le="0.5"} 42
+processing_duration_seconds_bucket{le="1"} 42
+processing_duration_seconds_bucket{le="2.5"} 42
+processing_duration_seconds_bucket{le="5"} 42
+processing_duration_seconds_bucket{le="10"} 42
+processing_duration_seconds_bucket{le="+Inf"} 42
+processing_duration_seconds_sum 8.5
+processing_duration_seconds_count 42
+
+# HELP active_workers Number of currently active workers
+# TYPE active_workers gauge
+active_workers 5
+
+# HELP queue_size Current size of the job queue
+# TYPE queue_size gauge
+queue_size 0
+```
+
+### **Configuração**
+
+```bash
+# Porta do servidor de métricas
+METRICS_PORT=8080
+```
+
+### **Endpoints**
+
+- **Métricas**: `GET /metrics` - Endpoint para coleta do Prometheus
+- **Health Check**: `GET /health` - Verificação de saúde do sistema
+- **Dashboard**: `GET /` - Interface web com links
+
+### **Integração com Prometheus**
+
+Adicione ao `prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: "gohopper-consumer"
+    static_configs:
+      - targets: ["localhost:8080"]
+    metrics_path: /metrics
+    scrape_interval: 15s
 ```
 
 ### Estrutura do Evento

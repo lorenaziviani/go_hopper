@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -12,6 +13,7 @@ import (
 
 	"gohopper/configs"
 	"gohopper/internal/logger"
+	"gohopper/internal/metrics"
 	"gohopper/internal/processor"
 	"gohopper/internal/queue"
 
@@ -97,6 +99,13 @@ func main() {
 	go func() {
 		defer wg.Done()
 		healthCheck(mainCtx, workerPool, loggerInstance, cfg)
+	}()
+
+	// Start Prometheus metrics server
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		startMetricsServer(mainCtx, workerPool, loggerInstance, cfg)
 	}()
 
 	loggerInstance.Info(ctx, "Consumer started successfully", logger.Fields{
@@ -211,4 +220,70 @@ func healthCheck(ctx context.Context, workerPool *processor.WorkerPool, loggerIn
 			return
 		}
 	}
+}
+
+// startMetricsServer starts the HTTP server for Prometheus metrics
+func startMetricsServer(ctx context.Context, workerPool *processor.WorkerPool, loggerInstance *logger.Logger, cfg *configs.Config) {
+	prometheusMetrics := workerPool.GetPrometheusMetrics()
+	if prometheusMetrics == nil {
+		loggerInstance.Error(ctx, "Prometheus metrics not available", nil, nil)
+		return
+	}
+
+	server := &http.Server{
+		Addr:    ":" + cfg.Consumer.MetricsPort,
+		Handler: createMetricsHandler(prometheusMetrics),
+	}
+
+	loggerInstance.Info(ctx, "Starting Prometheus metrics server", logger.Fields{
+		"address":  server.Addr,
+		"endpoint": "/metrics",
+	})
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			loggerInstance.Error(ctx, "Metrics server error", err, nil)
+		}
+	}()
+
+	<-ctx.Done()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		loggerInstance.Error(ctx, "Error shutting down metrics server", err, nil)
+	} else {
+		loggerInstance.Info(ctx, "Metrics server stopped gracefully", nil)
+	}
+}
+
+// createMetricsHandler creates the HTTP handler for metrics
+func createMetricsHandler(prometheusMetrics *metrics.PrometheusMetrics) http.Handler {
+	mux := http.NewServeMux()
+
+	mux.Handle("/metrics", prometheusMetrics.GetHandler())
+
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"healthy"}`))
+	})
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<html>
+				<head><title>Gohopper Consumer Metrics</title></head>
+				<body>
+					<h1>Gohopper Consumer Metrics</h1>
+					<p><a href="/metrics">Prometheus Metrics</a></p>
+					<p><a href="/health">Health Check</a></p>
+				</body>
+			</html>
+		`))
+	})
+
+	return mux
 }
