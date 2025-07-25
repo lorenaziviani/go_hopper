@@ -1,557 +1,303 @@
-# Gohopper 🐰
+# 🐰 Gohopper - Sistema de Eventos Assíncrono
 
-Sistema assíncrono de publicação e consumo de eventos usando Go e RabbitMQ. Implementa processamento concorrente de mensagens com pool de workers, controle de falhas com backoff exponencial e redirecionamento automático para Dead Letter Queue (DLQ).
+<div align="center">
+<img src=".gitassets/cover.png" width="350" />
 
-## 🚀 Características
+<div data-badges>
+  <img src="https://img.shields.io/github/stars/lorenaziviani/go_hopper?style=for-the-badge&logo=github" alt="GitHub stars" />
+  <img src="https://img.shields.io/github/forks/lorenaziviani/go_hopper?style=for-the-badge&logo=github" alt="GitHub forks" />
+  <img src="https://img.shields.io/github/last-commit/lorenaziviani/go_hopper?style=for-the-badge&logo=github" alt="GitHub last commit" />
+</div>
 
-- **Processamento Concorrente**: Pool de workers para processamento paralelo de mensagens
-- **Controle de Falhas**: Backoff exponencial e retry automático
-- **Dead Letter Queue**: Redirecionamento automático de mensagens com falha
-- **Race Conditions**: Tratamento adequado com boas práticas de concorrência
-- **WaitGroups**: Sincronização de goroutines
-- **Canais**: Comunicação entre goroutines de forma thread-safe
+<div data-badges>
+  <img src="https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/RabbitMQ-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white" alt="RabbitMQ" />
+  <img src="https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white" alt="Prometheus" />
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
+  <img src="https://img.shields.io/badge/JSON-000000?style=for-the-badge&logo=json&logoColor=white" alt="JSON" />
+  <img src="https://img.shields.io/badge/Concurrency-326CE5?style=for-the-badge&logo=go&logoColor=white" alt="Concurrency" />
+</div>
+</div>
 
-## 📁 Estrutura do Projeto
+O Gohopper é um sistema robusto de publicação e consumo de eventos assíncronos desenvolvido em Go, oferecendo uma solução completa para arquiteturas baseadas em eventos:
 
-```
-gohopper/
-├── cmd/
-│   ├── publisher/     # Aplicação publisher
-│   └── consumer/      # Aplicação consumer
-├── internal/
-│   ├── queue/         # Lógica de filas e RabbitMQ
-│   └── processor/     # Processamento de mensagens
-├── configs/           # Configurações
-├── docs/              # Documentação e diagramas
-├── docker-compose.yml # RabbitMQ container
-├── go.mod            # Dependências Go
-└── .env              # Variáveis de ambiente
-```
+✔ **Processamento Concorrente** com pool de workers configurável e semáforo customizado
 
-## 🛠️ Pré-requisitos
+✔ **Controle de Falhas Avançado** com retry exponencial, backoff inteligente e Dead Letter Queue (DLQ)
 
-- Go 1.21+
-- Docker e Docker Compose
-- RabbitMQ (via Docker)
+✔ **Observabilidade Completa** com Prometheus metrics, logs estruturados e health checks
 
-## 🚀 Instalação e Execução
+✔ **Race Conditions** tratadas com boas práticas de concorrência (WaitGroups, Mutex, Atomic)
 
-### 1. Clone o repositório
+✔ **Graceful Shutdown** com timeout configurável e finalização segura de goroutines
 
-```bash
-git clone <repository-url>
-cd gohopper
-```
+✔ **Métricas em Tempo Real** para monitoramento de performance e debugging
 
-### 2. Inicie o RabbitMQ
+Desenvolvido com Go, RabbitMQ e Prometheus, o sistema garante alta performance, resiliência e observabilidade completa para ambientes de produção.
 
-```bash
-docker-compose up -d
-```
+## 🖥️ Como rodar este projeto 🖥️
 
-### 3. Configure as variáveis de ambiente
+### Requisitos:
 
-```bash
-cp .env.example .env
-# Edite o arquivo .env conforme necessário
-```
+- [Go 1.21+](https://golang.org/doc/install) instalado
+- [Docker & Docker Compose](https://docs.docker.com/get-docker/) instalado
+- RabbitMQ 3.8+ (ou via Docker)
 
-### 4. Instale as dependências
+### Execução:
 
-```bash
-go mod download
-```
+1. Clone este repositório:
 
-### 5. Execute o consumer
+   ```sh
+   git clone https://github.com/lorenaziviani/go_hopper.git
+   ```
 
-```bash
-go run cmd/consumer/main.go
-```
+2. Acesse o diretório do projeto:
 
-### 6. Execute o publisher (em outro terminal)
+   ```sh
+   cd go_hopper
+   ```
 
-```bash
-go run cmd/publisher/main.go
-```
+3. Instale as dependências:
 
-### 7. Simule envio de eventos via CLI
+   ```sh
+   make deps
+   ```
 
-```bash
-make publish
-```
+4. Configure as variáveis de ambiente:
 
-## 📊 Monitoramento
+   ```sh
+   cp .env.example .env
+   ```
 
-- **RabbitMQ Management UI**: http://localhost:15672
+   Edite o arquivo `.env` com suas configurações específicas.
 
-  - Usuário: `guest`
-  - Senha: `guest`
+5. Inicie o RabbitMQ com Docker Compose:
 
-- **Prometheus Metrics**: http://localhost:8080/metrics
+   ```sh
+   make docker-up
+   ```
 
-  - Endpoint para coleta de métricas do Prometheus
-  - Métricas disponíveis:
-    - `messages_processed_total`: Total de mensagens processadas com sucesso
-    - `messages_failed_total`: Total de mensagens que falharam
-    - `retry_attempts_total`: Total de tentativas de retry
-    - `processing_duration_seconds`: Duração do processamento (histograma)
-    - `active_workers`: Número de workers ativos
-    - `queue_size`: Tamanho atual da fila de jobs
+6. Execute o consumer (em um terminal):
 
-- **Health Check**: http://localhost:8080/health
+   ```sh
+   make run-consumer
+   ```
 
-  - Endpoint para verificação de saúde do sistema
+7. Execute o publisher (em outro terminal):
 
-- **Dashboard**: http://localhost:8080/
-  - Interface web com links para métricas e health check
+   ```sh
+   make run-publisher
+   ```
 
-## 📝 Logging
+8. Ou simule publicação de eventos via CLI:
 
-O Gohopper utiliza logging estruturado com suporte a rastreamento:
+   ```sh
+   make publish
+   ```
 
-### Características
+9. Acesse os serviços:
+   - **RabbitMQ Management**: [http://localhost:15672](http://localhost:15672) (guest/guest)
+   - **Prometheus Metrics**: [http://localhost:8080/metrics](http://localhost:8080/metrics)
+   - **Health Check**: [http://localhost:8080/health](http://localhost:8080/health)
+   - **Dashboard**: [http://localhost:8080/](http://localhost:8080/)
 
-- **Formato JSON**: Logs estruturados para fácil parsing
-- **Trace ID**: Rastreamento de requisições através do sistema
-- **Contexto**: Informações de contexto em cada log
-- **Níveis**: Debug, Info, Warn, Error, Fatal
-- **Metadados**: Campos adicionais para análise
+## 🗒️ Features do projeto 🗒️
 
-### Exemplo de Log
+🚀 **Performance & Concorrência**
 
-```json
-{
-  "timestamp": "2024-01-01T12:00:00Z",
-  "level": "info",
-  "message": "Message published successfully",
-  "trace_id": "550e8400-e29b-41d4-a716-446655440001",
-  "message_id": "550e8400-e29b-41d4-a716-446655440000",
-  "message_type": "user.created",
-  "source": "gohopper-publisher",
-  "exchange_name": "events_exchange",
-  "routing_key": "event.user.created",
-  "body_size": 512
-}
-```
+- **Worker Pool**
+  - Processamento paralelo com múltiplas goroutines
+  - Pool configurável via parâmetro `-workers`
+  - Semáforo customizado para controle de concorrência
+  - Graceful shutdown com finalização de jobs em andamento
+- **Race Conditions**
+  - Tratamento adequado com Mutex, WaitGroups e Atomic
+  - Implementação thread-safe para métricas concorrentes
+  - Sincronização de goroutines com boas práticas
+- **Canais & Goroutines**
+  - Comunicação entre goroutines de forma thread-safe
+  - Context cancellation para controle de vida
+  - WaitGroups para sincronização de finalização
 
-### Configuração
+🔄 **Resiliência & Controle de Falhas**
 
-```bash
-LOG_LEVEL=info  # debug, info, warn, error, fatal
-```
+- **Retry com Exponential Backoff**
+  - Tentativas automáticas com delay crescente
+  - Jitter para evitar thundering herd
+  - Configuração flexível de max retries e timeouts
+  - Context timeout para cada tentativa
+- **Dead Letter Queue (DLQ)**
+  - Redirecionamento automático de mensagens falhadas
+  - Separação por tipo de falha (retryable/non-retryable)
+  - Consumer específico para processamento de DLQ
+  - Metadados detalhados para análise de falhas
+- **Graceful Shutdown**
+  - Captura de sinais SIGINT/SIGTERM
+  - Timeout configurável para finalização
+  - Finalização segura de todas as goroutines
+  - Logs detalhados do processo de shutdown
 
-## 🔧 Configuração
+📊 **Observabilidade & Monitoramento**
 
-### Variáveis de Ambiente
+- **Prometheus Metrics**
+  - Métricas de mensagens processadas/falhadas
+  - Histograma de duração de processamento
+  - Contadores de retry attempts
+  - Gauges de workers ativos e tamanho da fila
+- **Structured Logging**
+  - Logs JSON estruturados com trace_id
+  - Múltiplos níveis (debug, info, warn, error, fatal)
+  - Contexto rico para análise e debugging
+  - Metadados detalhados em cada log
+- **Health Checks**
+  - Endpoint de health check em tempo real
+  - Verificação de conectividade com RabbitMQ
+  - Status do worker pool e métricas
+  - Dashboard web com links úteis
 
-| Variável                    | Descrição                                | Padrão               |
-| --------------------------- | ---------------------------------------- | -------------------- |
-| `RABBITMQ_HOST`             | Host do RabbitMQ                         | `localhost`          |
-| `RABBITMQ_PORT`             | Porta do RabbitMQ                        | `5672`               |
-| `RABBITMQ_USER`             | Usuário do RabbitMQ                      | `guest`              |
-| `RABBITMQ_PASSWORD`         | Senha do RabbitMQ                        | `guest`              |
-| `WORKER_POOL_SIZE`          | Tamanho do pool de workers               | `5`                  |
-| `MAX_RETRIES`               | Máximo de tentativas                     | `3`                  |
-| `RETRY_DELAY`               | Delay entre tentativas                   | `1000ms`             |
-| `RETRY_TIMEOUT`             | Timeout para cada tentativa              | `30s`                |
-| `MAX_CONCURRENT`            | Máximo de workers ativos simultaneamente | `5`                  |
-| `DLQ_NAME`                  | Nome da fila DLQ                         | `events_dlq`         |
-| `PUBLISH_INTERVAL`          | Intervalo de publicação                  | `2s`                 |
-| `PUBLISH_BATCH_SIZE`        | Tamanho do lote de publicação            | `10`                 |
-| `EVENT_SOURCE`              | Fonte dos eventos                        | `gohopper-publisher` |
-| `WORKER_SHUTDOWN_TIMEOUT`   | Timeout para parada do worker pool       | `30s`                |
-| `CONSUMER_SHUTDOWN_TIMEOUT` | Timeout para parada do consumer          | `10s`                |
-| `STATS_REPORT_INTERVAL`     | Intervalo de relatórios de estatísticas  | `30s`                |
-| `HEALTH_CHECK_INTERVAL`     | Intervalo de health check                | `60s`                |
-| `METRICS_PORT`              | Porta do servidor de métricas Prometheus | `8080`               |
+🛠️ **Administração & Testes**
 
-## 🏗️ Arquitetura
+- **Comandos Makefile**
+  - Scripts automatizados para build, run e test
+  - Comandos específicos para consumer e publisher
+  - Testes de integração e unitários
+  - Linting e formatação de código
+- **Testing Suite**
+  - Testes de race conditions e concorrência
+  - Testes de métricas com diferentes implementações
+  - Testes de integração publisher/consumer
+  - Benchmarks de performance
+- **Docker Integration**
+  - Containerização do RabbitMQ
+  - Docker Compose para ambiente completo
+  - Health checks para serviços
 
-O Gohopper utiliza uma arquitetura baseada em eventos com:
-
-- **Publisher**: Publica eventos na fila RabbitMQ
-- **Consumer**: Consome eventos com pool de workers
-- **Processor**: Processa mensagens com retry e DLQ
-- **Queue Manager**: Gerencia conexões e configurações do RabbitMQ
-
-## 📤 Publisher
-
-O publisher do Gohopper oferece duas modalidades de operação:
-
-### Modo Contínuo
-
-- Publica eventos automaticamente a cada intervalo configurado
-- Ideal para simulação de carga e testes contínuos
-- Suporte a graceful shutdown
-
-### Modo CLI
-
-- Publica um conjunto de eventos de teste e encerra
-- Útil para testes pontuais e validação
-- Executado via `make publish`
-
-### Tipos de Eventos Suportados
-
-- `user.created` - Criação de usuário
-- `user.updated` - Atualização de usuário
-- `order.created` - Criação de pedido
-- `payment.processed` - Processamento de pagamento
-- `notification.sent` - Envio de notificação
-
-## 📥 Consumer
-
-O consumer do Gohopper implementa processamento concorrente com worker pool:
-
-### Worker Pool
-
-- **Processamento Concorrente**: Múltiplas goroutines processando mensagens simultaneamente
-- **Configurável**: Número de workers ajustável via parâmetro `-workers`
-- **Graceful Shutdown**: Parada segura com finalização de jobs em andamento
-- **Estatísticas**: Monitoramento de performance e status do pool
-
-### Recursos Avançados
-
-- **Retry com Backoff Exponencial**: Tentativas automáticas com delay crescente e jitter
-- **Context Timeout**: Timeout configurável para cada tentativa de processamento
-- **Dead Letter Queue (DLQ)**: Sistema robusto de DLQ com separação de tipos de falha
-- **DLQ Consumer**: Consumer específico para processar mensagens falhadas
-- **Semáforo Customizado**: Controle de concorrência via semáforo com chan struct{}
-- **Acknowledgment**: Confirmação manual de processamento bem-sucedido
-- **Trace ID**: Rastreamento completo de mensagens através do sistema
-- **WaitGroup**: Sincronização de goroutines com controle de finalização
-- **Graceful Shutdown**: Encerramento seguro com timeout configurável
-- **Signal Handling**: Controle de processo com SIGINT/SIGTERM
-- **Health Check**: Monitoramento contínuo do estado do worker pool
-
-### Configuração
+## 🔧 Comandos de Teste 🔧
 
 ```bash
-# Consumer padrão (5 workers)
+# Rodar todos os testes
+make test
+
+# Testes específicos
+make test-coverage    # Testes com coverage
+make lint             # Linting do código
+make format           # Formatação do código
+
+# Comandos de métricas
+make dashboard        # Dashboard completo
+make dashboard-live   # Dashboard em tempo real
+make metrics          # Métricas Prometheus
+make health           # Health check
+
+# Ver todos os comandos disponíveis
+make help
+```
+
+## 📈 Monitoramento e Dashboards 📈
+
+### RabbitMQ Management UI
+
+Acesse [http://localhost:15672](http://localhost:15672) com **guest/guest** para ver:
+
+- Overview das filas e exchanges
+- Conexões ativas e consumers
+- Métricas de throughput e latência
+- Status de health dos serviços
+
+![RabbitMQ Overview](.gitassets/rabbitmq-overview.png)
+
+![RabbitMQ Connections](.gitassets/rabbitmq-connections.png)
+
+![RabbitMQ Exchanges](.gitassets/rabbitmq-exchanges.png)
+
+### Prometheus Metrics
+
+Acesse [http://localhost:8080/metrics](http://localhost:8080/metrics) para monitorar:
+
+- Métricas em tempo real do sistema
+- Contadores de mensagens processadas/falhadas
+- Histograma de duração de processamento
+- Status de workers e filas
+
+![Métricas Prometheus](.gitassets/metrics.png)
+
+![Sumário de Métricas](.gitassets/metrics-summary.png)
+
+### Dashboard de Métricas
+
+Acesse [http://localhost:8080/](http://localhost:8080/) para visualizar:
+
+- Health check em tempo real
+- Links para métricas e monitoramento
+- Status do sistema
+
+![Health Check](.gitassets/health.png)
+
+## 🌐 Endpoints da API 🌐
+
+### Health Check
+
+```bash
+# Health Check
+GET /health
+Response: {"status":"healthy"}
+
+# Métricas Prometheus
+GET /metrics
+Response: # HELP messages_processed_total...
+
+# Dashboard
+GET /
+Response: HTML com links úteis
+```
+
+### Consumer Endpoints
+
+```bash
+# Consumer com workers padrão (5)
 make run-consumer
 
-# Consumer com 10 workers
+# Consumer com workers customizados
 make run-consumer-workers
 
 # Consumer com tag customizada
 make run-consumer-tag
-```
 
-### Parâmetros de Linha de Comando
-
-| Parâmetro  | Descrição         | Padrão              |
-| ---------- | ----------------- | ------------------- |
-| `-workers` | Número de workers | `5`                 |
-| `-tag`     | Tag do consumer   | `gohopper-consumer` |
-
-### Controle de Processo
-
-O consumer implementa controle robusto de processo com:
-
-#### **Graceful Shutdown**
-
-- **SIGINT/SIGTERM**: Captura sinais de interrupção
-- **WaitGroup**: Sincroniza finalização de todas as goroutines
-- **Timeout Configurável**: Evita travamento em caso de falha
-- **Context Cancellation**: Propaga cancelamento para todas as goroutines
-
-#### **Goroutines Coordenadas**
-
-- **Worker Pool**: Workers sincronizados com WaitGroup
-- **Stats Reporting**: Relatórios periódicos com controle de vida
-- **Health Check**: Monitoramento contínuo com graceful shutdown
-- **Message Consumption**: Consumo de mensagens com context cancellation
-
-#### **Logs de Shutdown**
-
-### Retry com Exponential Backoff
-
-O sistema implementa retry robusto com exponential backoff:
-
-#### **Características do Retry**
-
-- **Tentativas Limitadas**: Configurável via `MAX_RETRIES` (padrão: 3)
-- **Exponential Backoff**: Delay crescente entre tentativas (base \* 2^attempt)
-- **Jitter**: Variação aleatória para evitar thundering herd
-- **Context Timeout**: Timeout configurável para cada tentativa
-- **Graceful Cancellation**: Respeita context cancellation
-
-#### **Fórmula do Backoff**
-
-```
-delay = baseDelay * 2^attempt + jitter
-jitter = delay * 0.1 * (0.5 + 0.5 * random)
-maxDelay = 30s
-```
-
-#### **Exemplo de Retry**
-
-```json
-{
-  "level": "warn",
-  "message": "Message retry scheduled",
-  "message_id": "550e8400-e29b-41d4-a716-446655440000",
-  "attempt": 1,
-  "max_retries": 3,
-  "retry_delay_ms": 2000,
-  "error": "simulated error processing user.created event"
-}
-{
-  "level": "info",
-  "message": "Message processed successfully after retry",
-  "message_id": "550e8400-e29b-41d4-a716-446655440000",
-  "attempt": 2,
-  "retry_count": 0
-}
-```
-
-#### **Context Timeout**
-
-- **Timeout por Tentativa**: Configurável via `RETRY_TIMEOUT`
-- **Cancellation**: Respeita context cancellation durante retry
-- **Graceful Handling**: Logs detalhados de timeout e cancellation
-
-### Dead Letter Queue (DLQ)
-
-O sistema implementa DLQ robusto com separação clara de tipos de falha:
-
-#### **Tipos de Falha**
-
-- **Retryable**: Erros temporários que podem ser retryados
-- **Non-Retryable**: Erros permanentes enviados direto para DLQ
-- **Max Retries Exceeded**: Após esgotar tentativas
-- **Timeout**: Timeout de processamento
-- **Context Cancelled**: Cancelação de contexto
-
-#### **Estratégia de DLQ**
-
-```go
-// Determinação automática do tipo de falha
-switch failureType {
-case FailureTypeRetryable:
-    // Reject para retry
-case FailureTypeNonRetryable:
-    // Enviar direto para DLQ
-case FailureTypeMaxRetries:
-    // Enviar para DLQ após max tentativas
-case FailureTypeTimeout:
-    // Enviar para DLQ por timeout
-case FailureTypeContext:
-    // Reject para retry (context pode ser temporário)
-}
-```
-
-#### **DLQ Consumer**
-
-```bash
-# Executar consumer específico para DLQ
+# DLQ Consumer
 make run-dlq-consumer
-
-# Com tag customizada
-go run ./cmd/dlq-consumer -tag=my-dlq-consumer
 ```
 
-#### **Processamento de DLQ**
-
-- **Max Retries**: Alerting, review manual, recovery
-- **Timeout**: Análise de performance, scaling
-- **Non-Retryable**: Validação de dados, migração de schema
-- **Unknown**: Processamento genérico
-
-#### **Metadados de DLQ**
-
-```json
-{
-  "dlq_reason": "max_retries_exceeded",
-  "dlq_timestamp": "2025-07-23T11:47:30-03:00",
-  "final_error": "simulated error processing user.created event"
-}
-```
-
-### Semáforo Customizado
-
-O sistema implementa controle de concorrência via semáforo customizado:
-
-#### **Características do Semáforo**
-
-- **Controle de Concorrência**: Limita workers ativos simultaneamente
-- **Implementação Customizada**: Usando `chan struct{}`
-- **Context Awareness**: Respeita context cancellation
-- **Estatísticas em Tempo Real**: Monitoramento de utilização
-- **Thread-Safe**: Mutex para operações concorrentes
-
-#### **Implementação**
-
-```go
-type Semaphore struct {
-	permits chan struct{}
-	mu      sync.RWMutex
-	active  int
-	max     int
-}
-
-func (s *Semaphore) Acquire(ctx context.Context) error {
-	select {
-	case s.permits <- struct{}{}:
-		s.mu.Lock()
-		s.active++
-		s.mu.Unlock()
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (s *Semaphore) Release() {
-	s.mu.Lock()
-	s.active--
-	s.mu.Unlock()
-	<-s.permits
-}
-```
-
-#### **Configuração**
+### Publisher Endpoints
 
 ```bash
-# Máximo de workers ativos simultaneamente
-MAX_CONCURRENT=5
+# Publisher contínuo
+make run-publisher
+
+# Publisher CLI (teste)
+make publish
 ```
 
-#### **Estatísticas do Semáforo**
+## 🏗️ Arquitetura do Sistema 🏗️
 
-```json
-{
-  "active": 3,
-  "max": 5,
-  "available": 2,
-  "utilization": 60.0
-}
+<div align="center">
+<img src="docs/architecture.drawio.png" width="700" />
+</div>
+
+```
+Publisher → RabbitMQ Exchange → Queue → Consumer → Worker Pool → Processor → DLQ (se falhar)
 ```
 
-#### **Logs de Semáforo**
+**Fluxo detalhado:**
 
-```json
-{
-  "level": "debug",
-  "message": "Semaphore permit acquired",
-  "worker_id": 1,
-  "message_id": "550e8400-e29b-41d4-a716-446655440000",
-  "semaphore_stats": {
-    "active": 3,
-    "max": 5,
-    "available": 2,
-    "utilization": 60.0
-  }
-}
-```
+1. **Publisher**: Publica eventos na exchange RabbitMQ
+2. **Exchange**: Roteia mensagens para filas baseado no routing key
+3. **Queue**: Armazena mensagens aguardando processamento
+4. **Consumer**: Consome mensagens com worker do pool
+5. **Worker Pool**: Processa mensagens concorrentemente
+6. **Processor**: Aplica retry e redireciona para DLQ se necessário
+7. **DLQ**: Armazena mensagens que falharam após max retries
 
-```json
-{
-  "level": "info",
-  "message": "Shutdown signal received",
-  "signal": "SIGINT/SIGTERM"
-}
-{
-  "level": "info",
-  "message": "All workers stopped gracefully"
-}
-{
-  "level": "info",
-  "message": "All goroutines stopped gracefully"
-}
-```
-
-## 📈 Métricas Prometheus
-
-O Gohopper inclui métricas Prometheus para monitoramento em tempo real:
-
-### **Métricas Disponíveis**
-
-#### **Counters (Contadores)**
-
-- `messages_processed_total`: Total de mensagens processadas com sucesso
-- `messages_failed_total`: Total de mensagens que falharam no processamento
-- `retry_attempts_total`: Total de tentativas de retry realizadas
-
-#### **Histograms (Histogramas)**
-
-- `processing_duration_seconds`: Duração do processamento de mensagens
-  - Buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
-
-#### **Gauges (Medidores)**
-
-- `active_workers`: Número atual de workers ativos
-- `queue_size`: Tamanho atual da fila de jobs
-
-### **Exemplo de Métricas**
-
-```bash
-# HELP messages_processed_total Total number of messages processed successfully
-# TYPE messages_processed_total counter
-messages_processed_total 42
-
-# HELP messages_failed_total Total number of messages that failed processing
-# TYPE messages_failed_total counter
-messages_failed_total 3
-
-# HELP retry_attempts_total Total number of retry attempts
-# TYPE retry_attempts_total counter
-retry_attempts_total 8
-
-# HELP processing_duration_seconds Time spent processing messages
-# TYPE processing_duration_seconds histogram
-processing_duration_seconds_bucket{le="0.005"} 0
-processing_duration_seconds_bucket{le="0.01"} 5
-processing_duration_seconds_bucket{le="0.025"} 15
-processing_duration_seconds_bucket{le="0.05"} 25
-processing_duration_seconds_bucket{le="0.1"} 35
-processing_duration_seconds_bucket{le="0.25"} 40
-processing_duration_seconds_bucket{le="0.5"} 42
-processing_duration_seconds_bucket{le="1"} 42
-processing_duration_seconds_bucket{le="2.5"} 42
-processing_duration_seconds_bucket{le="5"} 42
-processing_duration_seconds_bucket{le="10"} 42
-processing_duration_seconds_bucket{le="+Inf"} 42
-processing_duration_seconds_sum 8.5
-processing_duration_seconds_count 42
-
-# HELP active_workers Number of currently active workers
-# TYPE active_workers gauge
-active_workers 5
-
-# HELP queue_size Current size of the job queue
-# TYPE queue_size gauge
-queue_size 0
-```
-
-### **Configuração**
-
-```bash
-# Porta do servidor de métricas
-METRICS_PORT=8080
-```
-
-### **Endpoints**
-
-- **Métricas**: `GET /metrics` - Endpoint para coleta do Prometheus
-- **Health Check**: `GET /health` - Verificação de saúde do sistema
-- **Dashboard**: `GET /` - Interface web com links
-
-### **Integração com Prometheus**
-
-Adicione ao `prometheus.yml`:
-
-```yaml
-scrape_configs:
-  - job_name: "gohopper-consumer"
-    static_configs:
-      - targets: ["localhost:8080"]
-    metrics_path: /metrics
-    scrape_interval: 15s
-```
-
-### Estrutura do Evento
-
-O Gohopper utiliza um schema de mensagem estruturado com metadados ricos:
+## 📊 Estrutura do Evento 📊
 
 ```json
 {
@@ -581,76 +327,96 @@ O Gohopper utiliza um schema de mensagem estruturado com metadados ricos:
 }
 ```
 
-#### Campos da Mensagem
+### Tipos de Eventos Suportados
 
-| Campo            | Tipo   | Descrição                   |
-| ---------------- | ------ | --------------------------- |
-| `id`             | string | UUID único da mensagem      |
-| `type`           | string | Tipo do evento              |
-| `data`           | object | Dados do evento             |
-| `metadata`       | object | Metadados da mensagem       |
-| `timestamp`      | string | Timestamp ISO 8601          |
-| `source`         | string | Origem da mensagem          |
-| `version`        | string | Versão do schema            |
-| `trace_id`       | string | ID de rastreamento          |
-| `correlation_id` | string | ID de correlação (opcional) |
+- `user.created` - Criação de usuário
+- `user.updated` - Atualização de usuário
+- `order.created` - Criação de pedido
+- `payment.processed` - Processamento de pagamento
+- `notification.sent` - Envio de notificação
 
-#### Metadados
+## 🔄 Fluxo de Processamento 🔄
 
-| Campo         | Tipo     | Descrição                     |
-| ------------- | -------- | ----------------------------- |
-| `priority`    | int      | Prioridade da mensagem (1-10) |
-| `retry_count` | int      | Número de tentativas          |
-| `headers`     | object   | Headers customizados          |
-| `tags`        | array    | Tags para categorização       |
-| `ttl`         | duration | Time-to-live (opcional)       |
-
-## 🔄 Fluxo de Processamento
-
-1. **Publisher** envia mensagem para exchange
-2. **Exchange** roteia para fila baseado no routing key
-3. **Consumer** recebe mensagem com worker do pool
-4. **Processor** processa com retry em caso de falha
-5. **DLQ** recebe mensagens que falharam após max retries
-
-## 🧪 Testes
+### 1. Publicação de Eventos
 
 ```bash
-# Executar todos os testes
-go test ./...
+# Modo contínuo
+make run-publisher
 
-# Executar testes com coverage
-go test -cover ./...
-
-# Executar testes de benchmark
-go test -bench=. ./...
+# Modo CLI (teste)
+make publish
 ```
 
-## 📈 Performance
+### 2. Consumo e Processamento
 
-- **Throughput**: Processamento de milhares de mensagens por segundo
-- **Latência**: Baixa latência com processamento assíncrono
-- **Escalabilidade**: Pool de workers configurável
-- **Resiliência**: Retry automático e DLQ para falhas
+```bash
+# Iniciar consumer
+make run-consumer
 
-## 🤝 Contribuição
+# Ver logs em tempo real
+# Os logs mostram o processamento das mensagens
+```
 
-1. Fork o projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
+### 3. Monitoramento
 
-## 📄 Licença
+```bash
+# Dashboard em tempo real
+make dashboard-live
 
-Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+# Métricas específicas
+make metrics-json
+```
 
-## 👥 Autores
+## 📈 Performance e Métricas 📈
 
-- **Seu Nome** - _Desenvolvimento inicial_ - [SeuGitHub](https://github.com/seugithub)
+### Métricas Disponíveis
 
-## 🙏 Agradecimentos
+| Métrica                       | Tipo      | Descrição                       |
+| ----------------------------- | --------- | ------------------------------- |
+| `messages_processed_total`    | Counter   | Total de mensagens processadas  |
+| `messages_failed_total`       | Counter   | Total de mensagens que falharam |
+| `retry_attempts_total`        | Counter   | Total de tentativas de retry    |
+| `processing_duration_seconds` | Histogram | Duração do processamento        |
+| `active_workers`              | Gauge     | Número de workers ativos        |
+| `queue_size`                  | Gauge     | Tamanho da fila                 |
 
-- RabbitMQ para o sistema de mensageria
-- Go team pela linguagem e runtime
-- Comunidade Go pelos padrões e boas práticas
+### Exemplo de Performance
+
+![Sistema Rodando](.gitassets/running.png)
+
+![Processamento](.gitassets/proccess.png)
+
+## 🧪 Testes e Qualidade 🧪
+
+### Testes Disponíveis
+
+```bash
+# Testes unitários
+go test ./internal/processor
+go test ./internal/queue
+
+# Testes de integração
+go test ./tests/integration
+
+# Testes com coverage
+make test-coverage
+
+# Linting
+make lint
+```
+
+### Cobertura de Testes
+
+- **Testes de Race Conditions**: Verificação de concorrência
+- **Testes de Métricas**: Validação de contadores thread-safe
+- **Testes de Integração**: Publisher/Consumer end-to-end
+- **Testes de Performance**: Benchmarks e stress tests
+
+## 💎 Links úteis 💎
+
+- [Go Documentation](https://golang.org/doc/)
+- [RabbitMQ Documentation](https://www.rabbitmq.com/documentation.html)
+- [Prometheus](https://prometheus.io/docs/)
+- [Docker Documentation](https://docs.docker.com/)
+- [Concurrency in Go](https://golang.org/doc/effective_go.html#concurrency)
+- [Go Testing](https://golang.org/pkg/testing/)

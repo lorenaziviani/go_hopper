@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -267,13 +268,15 @@ func createMetricsHandler(prometheusMetrics *metrics.PrometheusMetrics) http.Han
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"healthy"}`))
+		if _, err := w.Write([]byte(`{"status":"healthy"}`)); err != nil {
+			log.Printf("Error writing health response: %v", err)
+		}
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`
+		if _, err := w.Write([]byte(`
 			<html>
 				<head><title>Gohopper Consumer Metrics</title></head>
 				<body>
@@ -282,7 +285,9 @@ func createMetricsHandler(prometheusMetrics *metrics.PrometheusMetrics) http.Han
 					<p><a href="/health">Health Check</a></p>
 				</body>
 			</html>
-		`))
+		`)); err != nil {
+			log.Printf("Error writing dashboard response: %v", err)
+		}
 	})
 
 	return mux

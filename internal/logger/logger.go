@@ -10,6 +10,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type contextKey string
+
+const (
+	TraceIDKey contextKey = "trace_id"
+)
+
 // Logger wrapper for logrus with trace ID support
 type Logger struct {
 	logger *logrus.Logger
@@ -63,12 +69,12 @@ func getLogLevel() logrus.Level {
 // WithTraceID adds trace ID to the context
 func WithTraceID(ctx context.Context) context.Context {
 	traceID := uuid.New().String()
-	return context.WithValue(ctx, "trace_id", traceID)
+	return context.WithValue(ctx, TraceIDKey, traceID)
 }
 
 // GetTraceID gets the trace ID from the context
 func GetTraceID(ctx context.Context) string {
-	if traceID, ok := ctx.Value("trace_id").(string); ok {
+	if traceID, ok := ctx.Value(TraceIDKey).(string); ok {
 		return traceID
 	}
 	return ""
@@ -221,7 +227,7 @@ func (l *Logger) LogWithTraceID(traceID, level, message string, fields Fields) {
 	}
 	fields["trace_id"] = traceID
 
-	ctx := context.WithValue(context.Background(), "trace_id", traceID)
+	ctx := context.WithValue(context.Background(), TraceIDKey, traceID)
 
 	switch level {
 	case "debug":

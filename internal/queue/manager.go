@@ -169,7 +169,7 @@ func (m *Manager) SetupQueues() error {
 	}
 
 	// Bind main queue with the exchange
-	routingKey := getEnv("ROUTING_KEY", "event.*")
+	routingKey := getEnv("ROUTING_KEY", "event.#")
 	err = m.channel.QueueBind(
 		queueName,    // queue name
 		routingKey,   // routing key
@@ -397,7 +397,7 @@ func (m *Manager) processMessage(ctx context.Context, delivery amqp.Delivery, ha
 		return
 	}
 
-	messageCtx := context.WithValue(ctx, "trace_id", message.TraceID)
+	messageCtx := context.WithValue(ctx, logger.TraceIDKey, message.TraceID)
 
 	m.logger.LogMessageReceived(messageCtx, message.ID, message.Type, message.Source, logger.Fields{
 		"delivery_tag": delivery.DeliveryTag,
@@ -438,7 +438,7 @@ func (m *Manager) processDLQMessage(ctx context.Context, delivery amqp.Delivery,
 	}
 
 	// Create context with message trace ID
-	messageCtx := context.WithValue(ctx, "trace_id", message.TraceID)
+	messageCtx := context.WithValue(ctx, logger.TraceIDKey, message.TraceID)
 
 	m.logger.LogMessageReceived(messageCtx, message.ID, message.Type, message.Source, logger.Fields{
 		"delivery_tag": delivery.DeliveryTag,
